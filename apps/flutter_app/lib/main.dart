@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'engine/engine_bridge.dart';
 import 'engine/flutter_engine_bridge_adapter.dart';
+import 'widgets/engine_surface.dart';
 
 void main() {
   runApp(const FlutterShellApp());
@@ -538,6 +539,11 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage> {
 
   @override
   Widget build(BuildContext context) {
+    final bool isSurfaceActive =
+        _engineStatus == 'Opened' ||
+        _engineStatus == 'Ticking' ||
+        _engineStatus == 'Paused';
+
     return Scaffold(
       appBar: AppBar(title: const Text('Krkr2 Flutter Shell')),
       body: SingleChildScrollView(
@@ -576,6 +582,26 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage> {
                 Text('Last result: $_lastResult', textAlign: TextAlign.center),
                 const SizedBox(height: 8),
                 Text(_lastError, textAlign: TextAlign.center),
+                const SizedBox(height: 20),
+                EngineSurface(
+                  bridge: _bridge,
+                  active: isSurfaceActive,
+                  onLog: (String message) {
+                    _appendLog('surface: $message');
+                  },
+                  onError: (String message) {
+                    if (!mounted) return;
+                    setState(() {
+                      _lastError = 'Last error: $message';
+                    });
+                    _appendLog('surface error: $message');
+                  },
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Tip: Click the surface to focus, then keyboard input will be forwarded.',
+                  textAlign: TextAlign.center,
+                ),
                 const SizedBox(height: 20),
                 TextField(
                   controller: _engineLibraryPathController,
