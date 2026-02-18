@@ -8,13 +8,19 @@ class FlutterEngineBridge {
     EngineFfiBridge? ffiBridge,
     String? ffiLibraryPath,
   }) : _platform = platform ?? FlutterEngineBridgePlatform.instance,
-       _ffiBridge = ffiBridge ?? EngineFfiBridge.tryCreate(libraryPath: ffiLibraryPath);
+       _ffiBridge =
+           ffiBridge ?? EngineFfiBridge.tryCreate(libraryPath: ffiLibraryPath),
+       _ffiInitializationError = ffiBridge == null
+           ? EngineFfiBridge.lastCreateError
+           : '';
 
   final FlutterEngineBridgePlatform _platform;
   final EngineFfiBridge? _ffiBridge;
+  final String _ffiInitializationError;
   String _fallbackLastError = '';
 
   bool get isFfiAvailable => _ffiBridge != null;
+  String get ffiInitializationError => _ffiInitializationError;
 
   Future<String?> getPlatformVersion() {
     return _platform.getPlatformVersion();
@@ -32,7 +38,8 @@ class FlutterEngineBridge {
   Future<int> engineCreate({String? writablePath, String? cachePath}) async {
     return _withFfiCall(
       apiName: 'engine_create',
-      call: (ffi) => ffi.create(writablePath: writablePath, cachePath: cachePath),
+      call: (ffi) =>
+          ffi.create(writablePath: writablePath, cachePath: cachePath),
     );
   }
 
@@ -43,7 +50,10 @@ class FlutterEngineBridge {
     );
   }
 
-  Future<int> engineOpenGame(String gameRootPath, {String? startupScript}) async {
+  Future<int> engineOpenGame(
+    String gameRootPath, {
+    String? startupScript,
+  }) async {
     return _withFfiCall(
       apiName: 'engine_open_game',
       call: (ffi) => ffi.openGame(gameRootPath, startupScript: startupScript),
@@ -58,17 +68,11 @@ class FlutterEngineBridge {
   }
 
   Future<int> enginePause() async {
-    return _withFfiCall(
-      apiName: 'engine_pause',
-      call: (ffi) => ffi.pause(),
-    );
+    return _withFfiCall(apiName: 'engine_pause', call: (ffi) => ffi.pause());
   }
 
   Future<int> engineResume() async {
-    return _withFfiCall(
-      apiName: 'engine_resume',
-      call: (ffi) => ffi.resume(),
-    );
+    return _withFfiCall(apiName: 'engine_resume', call: (ffi) => ffi.resume());
   }
 
   Future<int> engineSetOption({
@@ -86,9 +90,10 @@ class FlutterEngineBridge {
     if (ffi == null) {
       final platformVersion = await _platform.getPlatformVersion();
       final versionLabel = platformVersion ?? 'unknown';
-      _fallbackLastError =
-          'FFI unavailable for engine_get_runtime_api_version. '
-          'MethodChannel fallback active ($versionLabel).';
+      _fallbackLastError = _buildFallbackError(
+        'FFI unavailable for engine_get_runtime_api_version. '
+        'MethodChannel fallback active ($versionLabel).',
+      );
       return kEngineResultNotSupported;
     }
 
@@ -119,8 +124,9 @@ class FlutterEngineBridge {
     if (ffi == null) {
       final platformVersion = await _platform.getPlatformVersion();
       final versionLabel = platformVersion ?? 'unknown';
-      _fallbackLastError =
-          'FFI unavailable for $apiName. MethodChannel fallback active ($versionLabel).';
+      _fallbackLastError = _buildFallbackError(
+        'FFI unavailable for $apiName. MethodChannel fallback active ($versionLabel).',
+      );
       return fallbackResult;
     }
 
@@ -131,5 +137,12 @@ class FlutterEngineBridge {
       _fallbackLastError = '';
     }
     return result;
+  }
+
+  String _buildFallbackError(String base) {
+    if (_ffiInitializationError.isEmpty) {
+      return base;
+    }
+    return '$base\nFFI initialization error:\n$_ffiInitializationError';
   }
 }

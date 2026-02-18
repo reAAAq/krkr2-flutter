@@ -9,15 +9,21 @@ class EngineFfiBridge {
 
   final EngineBindings _bindings;
   Pointer<Void> _handle = nullptr;
+  static String _lastCreateError = '';
+  static String get lastCreateError => _lastCreateError;
 
   static EngineFfiBridge? tryCreate({String? libraryPath}) {
+    _lastCreateError = '';
     final library = EngineBindings.tryLoadLibrary(overridePath: libraryPath);
     if (library == null) {
+      _lastCreateError =
+          'Failed to load engine_api dynamic library.\n${EngineBindings.lastLoadError}';
       return null;
     }
     try {
       return EngineFfiBridge._(EngineBindings(library));
-    } catch (_) {
+    } catch (error) {
+      _lastCreateError = 'Failed to bind engine_api symbols: $error';
       return null;
     }
   }
@@ -93,8 +99,9 @@ class EngineFfiBridge {
 
   int openGame(String gameRootPath, {String? startupScript}) {
     final gameRootPtr = gameRootPath.toNativeUtf8();
-    final startupScriptPtr =
-        startupScript == null ? nullptr.cast<Utf8>() : startupScript.toNativeUtf8();
+    final startupScriptPtr = startupScript == null
+        ? nullptr.cast<Utf8>()
+        : startupScript.toNativeUtf8();
     try {
       return _bindings.engineOpenGame(_handle, gameRootPtr, startupScriptPtr);
     } finally {
@@ -117,10 +124,7 @@ class EngineFfiBridge {
     return _bindings.engineResume(_handle);
   }
 
-  int setOption({
-    required String key,
-    required String value,
-  }) {
+  int setOption({required String key, required String value}) {
     final option = calloc<EngineOption>();
     final keyPtr = key.toNativeUtf8();
     final valuePtr = value.toNativeUtf8();

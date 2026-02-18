@@ -53,28 +53,18 @@ final class EngineOption extends Struct {
 typedef _EngineGetRuntimeApiVersionNative = Int32 Function(Pointer<Uint32>);
 typedef _EngineGetRuntimeApiVersionDart = int Function(Pointer<Uint32>);
 
-typedef _EngineCreateNative = Int32 Function(
-  Pointer<EngineCreateDesc>,
-  Pointer<Pointer<Void>>,
-);
-typedef _EngineCreateDart = int Function(
-  Pointer<EngineCreateDesc>,
-  Pointer<Pointer<Void>>,
-);
+typedef _EngineCreateNative =
+    Int32 Function(Pointer<EngineCreateDesc>, Pointer<Pointer<Void>>);
+typedef _EngineCreateDart =
+    int Function(Pointer<EngineCreateDesc>, Pointer<Pointer<Void>>);
 
 typedef _EngineDestroyNative = Int32 Function(Pointer<Void>);
 typedef _EngineDestroyDart = int Function(Pointer<Void>);
 
-typedef _EngineOpenGameNative = Int32 Function(
-  Pointer<Void>,
-  Pointer<Utf8>,
-  Pointer<Utf8>,
-);
-typedef _EngineOpenGameDart = int Function(
-  Pointer<Void>,
-  Pointer<Utf8>,
-  Pointer<Utf8>,
-);
+typedef _EngineOpenGameNative =
+    Int32 Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
+typedef _EngineOpenGameDart =
+    int Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
 
 typedef _EngineTickNative = Int32 Function(Pointer<Void>, Uint32);
 typedef _EngineTickDart = int Function(Pointer<Void>, int);
@@ -85,75 +75,105 @@ typedef _EnginePauseDart = int Function(Pointer<Void>);
 typedef _EngineResumeNative = Int32 Function(Pointer<Void>);
 typedef _EngineResumeDart = int Function(Pointer<Void>);
 
-typedef _EngineSetOptionNative = Int32 Function(Pointer<Void>, Pointer<EngineOption>);
-typedef _EngineSetOptionDart = int Function(Pointer<Void>, Pointer<EngineOption>);
+typedef _EngineSetOptionNative =
+    Int32 Function(Pointer<Void>, Pointer<EngineOption>);
+typedef _EngineSetOptionDart =
+    int Function(Pointer<Void>, Pointer<EngineOption>);
 
 typedef _EngineGetLastErrorNative = Pointer<Utf8> Function(Pointer<Void>);
 typedef _EngineGetLastErrorDart = Pointer<Utf8> Function(Pointer<Void>);
 
 class EngineBindings {
   EngineBindings(DynamicLibrary library)
-    : engineGetRuntimeApiVersion = library.lookupFunction<
-        _EngineGetRuntimeApiVersionNative,
-        _EngineGetRuntimeApiVersionDart
-      >('engine_get_runtime_api_version'),
-      engineCreate = library.lookupFunction<_EngineCreateNative, _EngineCreateDart>(
-        'engine_create',
-      ),
-      engineDestroy = library.lookupFunction<_EngineDestroyNative, _EngineDestroyDart>(
-        'engine_destroy',
-      ),
-      engineOpenGame = library.lookupFunction<_EngineOpenGameNative, _EngineOpenGameDart>(
-        'engine_open_game',
-      ),
+    : engineGetRuntimeApiVersion = library
+          .lookupFunction<
+            _EngineGetRuntimeApiVersionNative,
+            _EngineGetRuntimeApiVersionDart
+          >('engine_get_runtime_api_version'),
+      engineCreate = library
+          .lookupFunction<_EngineCreateNative, _EngineCreateDart>(
+            'engine_create',
+          ),
+      engineDestroy = library
+          .lookupFunction<_EngineDestroyNative, _EngineDestroyDart>(
+            'engine_destroy',
+          ),
+      engineOpenGame = library
+          .lookupFunction<_EngineOpenGameNative, _EngineOpenGameDart>(
+            'engine_open_game',
+          ),
       engineTick = library.lookupFunction<_EngineTickNative, _EngineTickDart>(
         'engine_tick',
       ),
-      enginePause = library.lookupFunction<_EnginePauseNative, _EnginePauseDart>(
-        'engine_pause',
-      ),
-      engineResume = library.lookupFunction<_EngineResumeNative, _EngineResumeDart>(
-        'engine_resume',
-      ),
-      engineSetOption = library.lookupFunction<_EngineSetOptionNative, _EngineSetOptionDart>(
-        'engine_set_option',
-      ),
-      engineGetLastError = library.lookupFunction<
-        _EngineGetLastErrorNative,
-        _EngineGetLastErrorDart
-      >('engine_get_last_error');
+      enginePause = library
+          .lookupFunction<_EnginePauseNative, _EnginePauseDart>('engine_pause'),
+      engineResume = library
+          .lookupFunction<_EngineResumeNative, _EngineResumeDart>(
+            'engine_resume',
+          ),
+      engineSetOption = library
+          .lookupFunction<_EngineSetOptionNative, _EngineSetOptionDart>(
+            'engine_set_option',
+          ),
+      engineGetLastError = library
+          .lookupFunction<_EngineGetLastErrorNative, _EngineGetLastErrorDart>(
+            'engine_get_last_error',
+          );
 
   final int Function(Pointer<Uint32>) engineGetRuntimeApiVersion;
-  final int Function(Pointer<EngineCreateDesc>, Pointer<Pointer<Void>>) engineCreate;
+  final int Function(Pointer<EngineCreateDesc>, Pointer<Pointer<Void>>)
+  engineCreate;
   final int Function(Pointer<Void>) engineDestroy;
-  final int Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>) engineOpenGame;
+  final int Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>)
+  engineOpenGame;
   final int Function(Pointer<Void>, int) engineTick;
   final int Function(Pointer<Void>) enginePause;
   final int Function(Pointer<Void>) engineResume;
   final int Function(Pointer<Void>, Pointer<EngineOption>) engineSetOption;
   final Pointer<Utf8> Function(Pointer<Void>) engineGetLastError;
 
+  static String _lastLoadError = '';
+  static String get lastLoadError => _lastLoadError;
+
   static DynamicLibrary? tryLoadLibrary({String? overridePath}) {
+    final List<String> errors = <String>[];
+    _lastLoadError = '';
+
     if (overridePath != null && overridePath.isNotEmpty) {
       try {
         return DynamicLibrary.open(overridePath);
-      } catch (_) {}
+      } catch (error) {
+        errors.add('open("$overridePath") failed: $error');
+      }
     }
 
     final candidates = _candidateLibraryNames();
     for (final candidate in candidates) {
       try {
         return DynamicLibrary.open(candidate);
-      } catch (_) {}
+      } catch (error) {
+        errors.add('open("$candidate") failed: $error');
+      }
     }
 
     try {
       return DynamicLibrary.process();
-    } catch (_) {}
+    } catch (error) {
+      errors.add('DynamicLibrary.process() failed: $error');
+    }
 
     try {
       return DynamicLibrary.executable();
-    } catch (_) {}
+    } catch (error) {
+      errors.add('DynamicLibrary.executable() failed: $error');
+    }
+
+    if (errors.isEmpty) {
+      _lastLoadError =
+          'No dynamic library candidates available for this platform.';
+    } else {
+      _lastLoadError = errors.join('\n');
+    }
 
     return null;
   }

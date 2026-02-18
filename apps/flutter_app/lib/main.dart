@@ -33,12 +33,23 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage> {
   static const int _engineResultOk = 0;
   static const int _maxEventLogSize = 120;
   static const String _loading = 'Loading bridge info...';
+  static const String _defaultEngineLibraryPath = String.fromEnvironment(
+    'KRKR2_ENGINE_LIB',
+    defaultValue: '',
+  );
 
-  final FlutterEngineBridge _bridge = FlutterEngineBridge();
-  final TextEditingController _gamePathController = TextEditingController(text: '.');
-  final TextEditingController _optionKeyController =
-      TextEditingController(text: 'fps_limit');
-  final TextEditingController _optionValueController = TextEditingController(text: '60');
+  late FlutterEngineBridge _bridge;
+  final TextEditingController _engineLibraryPathController =
+      TextEditingController(text: _defaultEngineLibraryPath);
+  final TextEditingController _gamePathController = TextEditingController(
+    text: '.',
+  );
+  final TextEditingController _optionKeyController = TextEditingController(
+    text: 'fps_limit',
+  );
+  final TextEditingController _optionValueController = TextEditingController(
+    text: '60',
+  );
 
   Timer? _tickTimer;
   bool _busy = false;
@@ -50,6 +61,8 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage> {
   String _engineStatus = 'Not created';
   String _lastResult = 'N/A';
   String _lastError = 'Last error: <empty>';
+  String _libraryPathInfo = 'Engine library path: <auto>';
+  String _ffiInitInfo = 'FFI init: <none>';
   final List<String> _eventLogs = <String>[];
 
   int _tickCount = 0;
@@ -57,6 +70,7 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage> {
   @override
   void initState() {
     super.initState();
+    _recreateBridge();
     _appendLog('App started');
     _loadBridgeInfo();
   }
@@ -64,10 +78,48 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage> {
   @override
   void dispose() {
     _stopTickLoop(updateStatus: false, notify: false);
+    _engineLibraryPathController.dispose();
     _gamePathController.dispose();
     _optionKeyController.dispose();
     _optionValueController.dispose();
     super.dispose();
+  }
+
+  String? _currentEngineLibraryPathOrNull() {
+    final String value = _engineLibraryPathController.text.trim();
+    return value.isEmpty ? null : value;
+  }
+
+  void _recreateBridge() {
+    final String? path = _currentEngineLibraryPathOrNull();
+    _bridge = FlutterEngineBridge(ffiLibraryPath: path);
+    _libraryPathInfo = 'Engine library path: ${path ?? "<auto>"}';
+    final String ffiInitError = _bridge.ffiInitializationError;
+    _ffiInitInfo = ffiInitError.isEmpty
+        ? 'FFI init: <none>'
+        : 'FFI init: $ffiInitError';
+  }
+
+  Future<void> _applyBridgePath() async {
+    if (_busy) return;
+    if (_isTicking) {
+      _stopTickLoop(updateStatus: false);
+    }
+    if (mounted) {
+      setState(() {
+        _recreateBridge();
+        _lastResult = 'bridge_reload => done';
+      });
+    } else {
+      _recreateBridge();
+    }
+    _appendLog(
+      _libraryPathInfo.replaceFirst(
+        'Engine library path: ',
+        'Bridge reloaded with path: ',
+      ),
+    );
+    await _loadBridgeInfo();
   }
 
   Future<void> _loadBridgeInfo() async {
@@ -80,9 +132,22 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage> {
       setState(() {
         _backendInfo = backend;
         _platformInfo = platform ?? 'No platform info returned from plugin.';
-        _lastError = error.isEmpty ? 'Last error: <empty>' : 'Last error: $error';
+        _lastError = error.isEmpty
+            ? 'Last error: <empty>'
+            : 'Last error: $error';
+        final String ffiInitError = _bridge.ffiInitializationError;
+        _ffiInitInfo = ffiInitError.isEmpty
+            ? 'FFI init: <none>'
+            : 'FFI init: $ffiInitError';
       });
-      _appendLog('Bridge ready: backend=$backend, platform=$_platformInfo');
+      _appendLog(
+        'Bridge ready: backend=$backend, platform=$_platformInfo, ffi=${_bridge.isFfiAvailable}',
+      );
+      if (_bridge.ffiInitializationError.isNotEmpty) {
+        _appendLog(
+          'FFI initialization error: ${_bridge.ffiInitializationError}',
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -218,7 +283,9 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage> {
       if (!mounted) return;
       setState(() {
         _lastResult = 'engine_set_option($key=$value) => $result';
-        _lastError = error.isEmpty ? 'Last error: <empty>' : 'Last error: $error';
+        _lastError = error.isEmpty
+            ? 'Last error: <empty>'
+            : 'Last error: $error';
       });
       _appendLog(
         'engine_set_option($key=$value) => $result, '
@@ -247,7 +314,9 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage> {
     });
     _appendLog('Tick loop started (16ms interval)');
 
-    _tickTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) async {
+    _tickTimer = Timer.periodic(const Duration(milliseconds: 16), (
+      timer,
+    ) async {
       if (_tickInFlight) {
         return;
       }
@@ -262,16 +331,22 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage> {
             _isTicking = false;
             _engineStatus = 'Faulted';
             _lastResult = 'engine_tick => $result';
-            _lastError = error.isEmpty ? 'Last error: <empty>' : 'Last error: $error';
+            _lastError = error.isEmpty
+                ? 'Last error: <empty>'
+                : 'Last error: $error';
           });
-          _appendLog('Tick faulted: result=$result, error=${error.isEmpty ? "<empty>" : error}');
+          _appendLog(
+            'Tick faulted: result=$result, error=${error.isEmpty ? "<empty>" : error}',
+          );
           return;
         }
 
         setState(() {
           _tickCount += 1;
           _lastResult = 'engine_tick => $result';
-          _lastError = error.isEmpty ? 'Last error: <empty>' : 'Last error: $error';
+          _lastError = error.isEmpty
+              ? 'Last error: <empty>'
+              : 'Last error: $error';
         });
         if (_tickCount % 120 == 0) {
           _appendLog('Tick alive: count=$_tickCount');
@@ -381,10 +456,11 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage> {
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  'Platform: $_platformInfo',
-                  textAlign: TextAlign.center,
-                ),
+                Text('Platform: $_platformInfo', textAlign: TextAlign.center),
+                const SizedBox(height: 8),
+                Text(_libraryPathInfo, textAlign: TextAlign.center),
+                const SizedBox(height: 8),
+                Text(_ffiInitInfo, textAlign: TextAlign.center),
                 const SizedBox(height: 16),
                 Text(
                   'Engine status: $_engineStatus',
@@ -398,6 +474,23 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage> {
                 const SizedBox(height: 8),
                 Text(_lastError, textAlign: TextAlign.center),
                 const SizedBox(height: 20),
+                TextField(
+                  controller: _engineLibraryPathController,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    labelText: 'Engine library path (optional)',
+                    hintText: '/tmp/engine_api_build/libengine_api.dylib',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: OutlinedButton(
+                    onPressed: (_busy || _isTicking) ? null : _applyBridgePath,
+                    child: const Text('Apply bridge path'),
+                  ),
+                ),
+                const SizedBox(height: 8),
                 TextField(
                   controller: _gamePathController,
                   decoration: const InputDecoration(
@@ -454,7 +547,9 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage> {
                       child: const Text('engine_open_game'),
                     ),
                     FilledButton.tonal(
-                      onPressed: (_busy || _isTicking) ? _stopTickLoop : _startTickLoop,
+                      onPressed: (_busy || _isTicking)
+                          ? _stopTickLoop
+                          : _startTickLoop,
                       child: Text(_isTicking ? 'Stop Tick' : 'Start Tick'),
                     ),
                     OutlinedButton(
@@ -470,7 +565,9 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage> {
                       child: const Text('engine_resume'),
                     ),
                     ElevatedButton(
-                      onPressed: (_busy || _isTicking) ? null : _engineSetOption,
+                      onPressed: (_busy || _isTicking)
+                          ? null
+                          : _engineSetOption,
                       child: const Text('engine_set_option'),
                     ),
                   ],
