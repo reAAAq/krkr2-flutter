@@ -11,6 +11,7 @@
 .vs/
 .gradle/
 .act/
+.devtools/flutter/
 
 local.properties
 
