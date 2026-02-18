@@ -1,14 +1,21 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_engine_bridge/flutter_engine_bridge.dart';
+
+import 'engine/engine_bridge.dart';
+import 'engine/flutter_engine_bridge_adapter.dart';
 
 void main() {
   runApp(const FlutterShellApp());
 }
 
 class FlutterShellApp extends StatelessWidget {
-  const FlutterShellApp({super.key});
+  const FlutterShellApp({
+    super.key,
+    this.engineBridgeBuilder = createEngineBridge,
+  });
+
+  final EngineBridgeBuilder engineBridgeBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -17,13 +24,18 @@ class FlutterShellApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
       ),
-      home: const EngineBridgeHomePage(),
+      home: EngineBridgeHomePage(engineBridgeBuilder: engineBridgeBuilder),
     );
   }
 }
 
 class EngineBridgeHomePage extends StatefulWidget {
-  const EngineBridgeHomePage({super.key});
+  const EngineBridgeHomePage({
+    super.key,
+    this.engineBridgeBuilder = createEngineBridge,
+  });
+
+  final EngineBridgeBuilder engineBridgeBuilder;
 
   @override
   State<EngineBridgeHomePage> createState() => _EngineBridgeHomePageState();
@@ -38,7 +50,7 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage> {
     defaultValue: '',
   );
 
-  late FlutterEngineBridge _bridge;
+  late EngineBridge _bridge;
   final TextEditingController _engineLibraryPathController =
       TextEditingController(text: _defaultEngineLibraryPath);
   final TextEditingController _gamePathController = TextEditingController(
@@ -92,7 +104,7 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage> {
 
   void _recreateBridge() {
     final String? path = _currentEngineLibraryPathOrNull();
-    _bridge = FlutterEngineBridge(ffiLibraryPath: path);
+    _bridge = widget.engineBridgeBuilder(ffiLibraryPath: path);
     _libraryPathInfo = 'Engine library path: ${path ?? "<auto>"}';
     final String ffiInitError = _bridge.ffiInitializationError;
     _ffiInitInfo = ffiInitError.isEmpty
