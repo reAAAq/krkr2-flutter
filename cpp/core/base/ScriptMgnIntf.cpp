@@ -51,6 +51,7 @@
 #include "BitmapLayerTreeOwner.h"
 #include "Extension.h"
 #include "Platform.h"
+#include "Exception.h"
 #include "ConfigManager/LocaleConfigManager.h"
 
 //---------------------------------------------------------------------------
@@ -1177,6 +1178,16 @@ void TVPBeforeProcessUnhandledException() { TVPDumpHWException(); }
 */
 extern ttstr TVPGetErrorDialogTitle();
 
+static void TVPTerminateAfterScriptException(const ttstr &reason) {
+    if(TVPHostSuppressProcessExit) {
+        // Embedded host mode: avoid full synchronous teardown from inside
+        // script exception handling. Mark runtime terminated and unwind.
+        TVPTerminateAsync(1);
+        throw EAbort(reason);
+    }
+    TVPTerminateSync(1);
+}
+
 //---------------------------------------------------------------------------
 void TVPShowScriptException(eTJS &e) {
     TVPSetSystemEventDisabledState(true);
@@ -1190,7 +1201,7 @@ void TVPShowScriptException(eTJS &e) {
         TVPShowSimpleMessageBox(errstr, TVPGetErrorDialogTitle());
         // Application->MessageDlg( errstr.AsStdString(),
         // std::wstring(), mtError, mbOK );
-        TVPTerminateSync(1);
+        TVPTerminateAfterScriptException(errstr);
     }
 }
 
@@ -1272,7 +1283,7 @@ void TVPShowScriptException(eTJSScriptError &e) {
             }
         }
 #endif
-        TVPTerminateSync(1);
+        TVPTerminateAfterScriptException(errstr);
     }
 }
 //---------------------------------------------------------------------------
