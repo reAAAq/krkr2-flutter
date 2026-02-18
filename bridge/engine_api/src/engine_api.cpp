@@ -2,6 +2,7 @@
 
 #if defined(ENGINE_API_USE_KRKR2_RUNTIME)
 
+#include <cstring>
 #include <new>
 #include <string>
 #include <unordered_set>
@@ -26,6 +27,9 @@ struct engine_handle_s {
   int state = 0;
   std::thread::id owner_thread;
   bool runtime_owner = false;
+  uint32_t surface_width = 1280;
+  uint32_t surface_height = 720;
+  uint64_t frame_serial = 0;
 };
 
 namespace {
@@ -396,6 +400,8 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
         "runtime requested termination");
   }
 
+  impl->frame_serial += 1;
+
   ClearHandleErrorLocked(impl);
   SetThreadError(nullptr);
   return ENGINE_RESULT_OK;
@@ -510,6 +516,183 @@ engine_result_t engine_set_option(engine_handle_t handle,
   return ENGINE_RESULT_OK;
 }
 
+engine_result_t engine_set_surface_size(engine_handle_t handle,
+                                        uint32_t width,
+                                        uint32_t height) {
+  if (width == 0 || height == 0) {
+    return SetThreadErrorAndReturn(ENGINE_RESULT_INVALID_ARGUMENT,
+                                   "width and height must be > 0");
+  }
+
+  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  engine_handle_s* impl = nullptr;
+  auto result = ValidateHandleLocked(handle, &impl);
+  if (result != ENGINE_RESULT_OK) {
+    return result;
+  }
+
+  std::lock_guard<std::mutex> guard(impl->mutex);
+  result = ValidateHandleThreadLocked(impl);
+  if (result != ENGINE_RESULT_OK) {
+    return result;
+  }
+
+  if (impl->state == ToStateValue(EngineState::kDestroyed)) {
+    return SetHandleErrorAndReturnLocked(impl, ENGINE_RESULT_INVALID_STATE,
+                                         "engine is already destroyed");
+  }
+
+  impl->surface_width = width;
+  impl->surface_height = height;
+  ClearHandleErrorLocked(impl);
+  SetThreadError(nullptr);
+  return ENGINE_RESULT_OK;
+}
+
+engine_result_t engine_get_frame_desc(engine_handle_t handle,
+                                      engine_frame_desc_t* out_frame_desc) {
+  if (out_frame_desc == nullptr) {
+    return SetThreadErrorAndReturn(ENGINE_RESULT_INVALID_ARGUMENT,
+                                   "out_frame_desc is null");
+  }
+  if (out_frame_desc->struct_size < sizeof(engine_frame_desc_t)) {
+    return SetThreadErrorAndReturn(
+        ENGINE_RESULT_INVALID_ARGUMENT,
+        "engine_frame_desc_t.struct_size is too small");
+  }
+
+  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  engine_handle_s* impl = nullptr;
+  auto result = ValidateHandleLocked(handle, &impl);
+  if (result != ENGINE_RESULT_OK) {
+    return result;
+  }
+
+  std::lock_guard<std::mutex> guard(impl->mutex);
+  result = ValidateHandleThreadLocked(impl);
+  if (result != ENGINE_RESULT_OK) {
+    return result;
+  }
+
+  if (impl->state == ToStateValue(EngineState::kDestroyed)) {
+    return SetHandleErrorAndReturnLocked(impl, ENGINE_RESULT_INVALID_STATE,
+                                         "engine is already destroyed");
+  }
+
+  std::memset(out_frame_desc, 0, sizeof(*out_frame_desc));
+  out_frame_desc->struct_size = sizeof(engine_frame_desc_t);
+  out_frame_desc->width = impl->surface_width;
+  out_frame_desc->height = impl->surface_height;
+  out_frame_desc->stride_bytes = impl->surface_width * 4u;
+  out_frame_desc->pixel_format = ENGINE_PIXEL_FORMAT_RGBA8888;
+  out_frame_desc->frame_serial = impl->frame_serial;
+
+  ClearHandleErrorLocked(impl);
+  SetThreadError(nullptr);
+  return ENGINE_RESULT_OK;
+}
+
+engine_result_t engine_read_frame_rgba(engine_handle_t handle,
+                                       void* out_pixels,
+                                       size_t out_pixels_size) {
+  if (out_pixels == nullptr) {
+    return SetThreadErrorAndReturn(ENGINE_RESULT_INVALID_ARGUMENT,
+                                   "out_pixels is null");
+  }
+
+  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  engine_handle_s* impl = nullptr;
+  auto result = ValidateHandleLocked(handle, &impl);
+  if (result != ENGINE_RESULT_OK) {
+    return result;
+  }
+
+  std::lock_guard<std::mutex> guard(impl->mutex);
+  result = ValidateHandleThreadLocked(impl);
+  if (result != ENGINE_RESULT_OK) {
+    return result;
+  }
+
+  if (impl->state != ToStateValue(EngineState::kOpened) &&
+      impl->state != ToStateValue(EngineState::kPaused)) {
+    return SetHandleErrorAndReturnLocked(
+        impl,
+        ENGINE_RESULT_INVALID_STATE,
+        "engine_open_game must succeed before engine_read_frame_rgba");
+  }
+
+  const size_t required_size =
+      static_cast<size_t>(impl->surface_width) *
+      static_cast<size_t>(impl->surface_height) * 4u;
+  if (out_pixels_size < required_size) {
+    return SetHandleErrorAndReturnLocked(
+        impl,
+        ENGINE_RESULT_INVALID_ARGUMENT,
+        "out_pixels_size is smaller than required frame buffer size");
+  }
+
+  std::memset(out_pixels, 0, required_size);
+  ClearHandleErrorLocked(impl);
+  SetThreadError(nullptr);
+  return ENGINE_RESULT_OK;
+}
+
+engine_result_t engine_send_input(engine_handle_t handle,
+                                  const engine_input_event_t* event) {
+  if (event == nullptr) {
+    return SetThreadErrorAndReturn(ENGINE_RESULT_INVALID_ARGUMENT,
+                                   "event is null");
+  }
+  if (event->struct_size < sizeof(engine_input_event_t)) {
+    return SetThreadErrorAndReturn(
+        ENGINE_RESULT_INVALID_ARGUMENT,
+        "engine_input_event_t.struct_size is too small");
+  }
+
+  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  engine_handle_s* impl = nullptr;
+  auto result = ValidateHandleLocked(handle, &impl);
+  if (result != ENGINE_RESULT_OK) {
+    return result;
+  }
+
+  std::lock_guard<std::mutex> guard(impl->mutex);
+  result = ValidateHandleThreadLocked(impl);
+  if (result != ENGINE_RESULT_OK) {
+    return result;
+  }
+
+  if (impl->state == ToStateValue(EngineState::kPaused)) {
+    return SetHandleErrorAndReturnLocked(impl, ENGINE_RESULT_INVALID_STATE,
+                                         "engine is paused");
+  }
+  if (impl->state != ToStateValue(EngineState::kOpened)) {
+    return SetHandleErrorAndReturnLocked(
+        impl,
+        ENGINE_RESULT_INVALID_STATE,
+        "engine_open_game must succeed before engine_send_input");
+  }
+
+  switch (event->type) {
+    case ENGINE_INPUT_EVENT_POINTER_DOWN:
+    case ENGINE_INPUT_EVENT_POINTER_MOVE:
+    case ENGINE_INPUT_EVENT_POINTER_UP:
+    case ENGINE_INPUT_EVENT_POINTER_SCROLL:
+    case ENGINE_INPUT_EVENT_KEY_DOWN:
+    case ENGINE_INPUT_EVENT_KEY_UP:
+    case ENGINE_INPUT_EVENT_TEXT_INPUT:
+    case ENGINE_INPUT_EVENT_BACK:
+      break;
+    default:
+      return SetHandleErrorAndReturnLocked(impl, ENGINE_RESULT_NOT_SUPPORTED,
+                                           "unsupported input event type");
+  }
+
+  ClearHandleErrorLocked(impl);
+  SetThreadError(nullptr);
+  return ENGINE_RESULT_OK;
+}
+
 const char* engine_get_last_error(engine_handle_t handle) {
   if (handle == nullptr) {
     return g_thread_error.c_str();
@@ -529,6 +712,7 @@ const char* engine_get_last_error(engine_handle_t handle) {
 
 #else
 
+#include <cstring>
 #include <new>
 #include <string>
 #include <unordered_set>
@@ -538,6 +722,9 @@ struct engine_handle_s {
   std::mutex mutex;
   std::string last_error;
   int state = 0;
+  uint32_t surface_width = 1280;
+  uint32_t surface_height = 720;
+  uint64_t frame_serial = 0;
 };
 
 namespace {
@@ -718,6 +905,7 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
     return ENGINE_RESULT_INVALID_STATE;
   }
 
+  impl->frame_serial += 1;
   impl->last_error.clear();
   SetThreadError(nullptr);
   return ENGINE_RESULT_OK;
@@ -795,6 +983,161 @@ engine_result_t engine_set_option(engine_handle_t handle,
   if (impl->state == ToStateValue(EngineState::kDestroyed)) {
     SetHandleErrorLocked(impl, "engine is already destroyed");
     return ENGINE_RESULT_INVALID_STATE;
+  }
+
+  impl->last_error.clear();
+  SetThreadError(nullptr);
+  return ENGINE_RESULT_OK;
+}
+
+engine_result_t engine_set_surface_size(engine_handle_t handle,
+                                        uint32_t width,
+                                        uint32_t height) {
+  if (width == 0 || height == 0) {
+    return SetThreadErrorAndReturn(ENGINE_RESULT_INVALID_ARGUMENT,
+                                   "width and height must be > 0");
+  }
+
+  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  engine_handle_s* impl = nullptr;
+  auto result = ValidateHandleLocked(handle, &impl);
+  if (result != ENGINE_RESULT_OK) {
+    return result;
+  }
+
+  std::lock_guard<std::mutex> guard(impl->mutex);
+  if (impl->state == ToStateValue(EngineState::kDestroyed)) {
+    SetHandleErrorLocked(impl, "engine is already destroyed");
+    return ENGINE_RESULT_INVALID_STATE;
+  }
+
+  impl->surface_width = width;
+  impl->surface_height = height;
+  impl->last_error.clear();
+  SetThreadError(nullptr);
+  return ENGINE_RESULT_OK;
+}
+
+engine_result_t engine_get_frame_desc(engine_handle_t handle,
+                                      engine_frame_desc_t* out_frame_desc) {
+  if (out_frame_desc == nullptr) {
+    return SetThreadErrorAndReturn(ENGINE_RESULT_INVALID_ARGUMENT,
+                                   "out_frame_desc is null");
+  }
+  if (out_frame_desc->struct_size < sizeof(engine_frame_desc_t)) {
+    return SetThreadErrorAndReturn(
+        ENGINE_RESULT_INVALID_ARGUMENT,
+        "engine_frame_desc_t.struct_size is too small");
+  }
+
+  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  engine_handle_s* impl = nullptr;
+  auto result = ValidateHandleLocked(handle, &impl);
+  if (result != ENGINE_RESULT_OK) {
+    return result;
+  }
+
+  std::lock_guard<std::mutex> guard(impl->mutex);
+  if (impl->state == ToStateValue(EngineState::kDestroyed)) {
+    SetHandleErrorLocked(impl, "engine is already destroyed");
+    return ENGINE_RESULT_INVALID_STATE;
+  }
+
+  std::memset(out_frame_desc, 0, sizeof(*out_frame_desc));
+  out_frame_desc->struct_size = sizeof(engine_frame_desc_t);
+  out_frame_desc->width = impl->surface_width;
+  out_frame_desc->height = impl->surface_height;
+  out_frame_desc->stride_bytes = impl->surface_width * 4u;
+  out_frame_desc->pixel_format = ENGINE_PIXEL_FORMAT_RGBA8888;
+  out_frame_desc->frame_serial = impl->frame_serial;
+
+  impl->last_error.clear();
+  SetThreadError(nullptr);
+  return ENGINE_RESULT_OK;
+}
+
+engine_result_t engine_read_frame_rgba(engine_handle_t handle,
+                                       void* out_pixels,
+                                       size_t out_pixels_size) {
+  if (out_pixels == nullptr) {
+    return SetThreadErrorAndReturn(ENGINE_RESULT_INVALID_ARGUMENT,
+                                   "out_pixels is null");
+  }
+
+  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  engine_handle_s* impl = nullptr;
+  auto result = ValidateHandleLocked(handle, &impl);
+  if (result != ENGINE_RESULT_OK) {
+    return result;
+  }
+
+  std::lock_guard<std::mutex> guard(impl->mutex);
+  if (impl->state != ToStateValue(EngineState::kOpened) &&
+      impl->state != ToStateValue(EngineState::kPaused)) {
+    SetHandleErrorLocked(impl,
+                         "engine_open_game must succeed before engine_read_frame_rgba");
+    return ENGINE_RESULT_INVALID_STATE;
+  }
+
+  const size_t required_size =
+      static_cast<size_t>(impl->surface_width) *
+      static_cast<size_t>(impl->surface_height) * 4u;
+  if (out_pixels_size < required_size) {
+    SetHandleErrorLocked(
+        impl,
+        "out_pixels_size is smaller than required frame buffer size");
+    return ENGINE_RESULT_INVALID_ARGUMENT;
+  }
+
+  std::memset(out_pixels, 0, required_size);
+  impl->last_error.clear();
+  SetThreadError(nullptr);
+  return ENGINE_RESULT_OK;
+}
+
+engine_result_t engine_send_input(engine_handle_t handle,
+                                  const engine_input_event_t* event) {
+  if (event == nullptr) {
+    return SetThreadErrorAndReturn(ENGINE_RESULT_INVALID_ARGUMENT,
+                                   "event is null");
+  }
+  if (event->struct_size < sizeof(engine_input_event_t)) {
+    return SetThreadErrorAndReturn(
+        ENGINE_RESULT_INVALID_ARGUMENT,
+        "engine_input_event_t.struct_size is too small");
+  }
+
+  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  engine_handle_s* impl = nullptr;
+  auto result = ValidateHandleLocked(handle, &impl);
+  if (result != ENGINE_RESULT_OK) {
+    return result;
+  }
+
+  std::lock_guard<std::mutex> guard(impl->mutex);
+  if (impl->state == ToStateValue(EngineState::kPaused)) {
+    SetHandleErrorLocked(impl, "engine is paused");
+    return ENGINE_RESULT_INVALID_STATE;
+  }
+  if (impl->state != ToStateValue(EngineState::kOpened)) {
+    SetHandleErrorLocked(impl,
+                         "engine_open_game must succeed before engine_send_input");
+    return ENGINE_RESULT_INVALID_STATE;
+  }
+
+  switch (event->type) {
+    case ENGINE_INPUT_EVENT_POINTER_DOWN:
+    case ENGINE_INPUT_EVENT_POINTER_MOVE:
+    case ENGINE_INPUT_EVENT_POINTER_UP:
+    case ENGINE_INPUT_EVENT_POINTER_SCROLL:
+    case ENGINE_INPUT_EVENT_KEY_DOWN:
+    case ENGINE_INPUT_EVENT_KEY_UP:
+    case ENGINE_INPUT_EVENT_TEXT_INPUT:
+    case ENGINE_INPUT_EVENT_BACK:
+      break;
+    default:
+      SetHandleErrorLocked(impl, "unsupported input event type");
+      return ENGINE_RESULT_NOT_SUPPORTED;
   }
 
   impl->last_error.clear();

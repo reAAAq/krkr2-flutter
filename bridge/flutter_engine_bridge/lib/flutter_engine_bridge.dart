@@ -1,3 +1,19 @@
+import 'dart:typed_data';
+
+export 'src/ffi/engine_bindings.dart'
+    show
+        kEngineInputEventBack,
+        kEngineInputEventKeyDown,
+        kEngineInputEventKeyUp,
+        kEngineInputEventPointerDown,
+        kEngineInputEventPointerMove,
+        kEngineInputEventPointerScroll,
+        kEngineInputEventPointerUp,
+        kEngineInputEventTextInput,
+        kEnginePixelFormatRgba8888,
+        kEnginePixelFormatUnknown;
+export 'src/ffi/engine_ffi.dart' show EngineFrameInfo, EngineInputEventData;
+
 import 'flutter_engine_bridge_platform_interface.dart';
 import 'src/ffi/engine_bindings.dart';
 import 'src/ffi/engine_ffi.dart';
@@ -82,6 +98,65 @@ class FlutterEngineBridge {
     return _withFfiCall(
       apiName: 'engine_set_option',
       call: (ffi) => ffi.setOption(key: key, value: value),
+    );
+  }
+
+  Future<int> engineSetSurfaceSize({
+    required int width,
+    required int height,
+  }) async {
+    return _withFfiCall(
+      apiName: 'engine_set_surface_size',
+      call: (ffi) => ffi.setSurfaceSize(width: width, height: height),
+    );
+  }
+
+  Future<EngineFrameInfo?> engineGetFrameDesc() async {
+    final ffi = _ffiBridge;
+    if (ffi == null) {
+      final platformVersion = await _platform.getPlatformVersion();
+      final versionLabel = platformVersion ?? 'unknown';
+      _fallbackLastError = _buildFallbackError(
+        'FFI unavailable for engine_get_frame_desc. '
+        'MethodChannel fallback active ($versionLabel).',
+      );
+      return null;
+    }
+
+    final frame = ffi.getFrameDesc();
+    if (frame == null) {
+      _fallbackLastError = ffi.lastError();
+    } else {
+      _fallbackLastError = '';
+    }
+    return frame;
+  }
+
+  Future<Uint8List?> engineReadFrameRgba() async {
+    final ffi = _ffiBridge;
+    if (ffi == null) {
+      final platformVersion = await _platform.getPlatformVersion();
+      final versionLabel = platformVersion ?? 'unknown';
+      _fallbackLastError = _buildFallbackError(
+        'FFI unavailable for engine_read_frame_rgba. '
+        'MethodChannel fallback active ($versionLabel).',
+      );
+      return null;
+    }
+
+    final frameData = ffi.readFrameRgba();
+    if (frameData == null) {
+      _fallbackLastError = ffi.lastError();
+    } else {
+      _fallbackLastError = '';
+    }
+    return frameData;
+  }
+
+  Future<int> engineSendInput(EngineInputEventData event) async {
+    return _withFfiCall(
+      apiName: 'engine_send_input',
+      call: (ffi) => ffi.sendInput(event),
     );
   }
 

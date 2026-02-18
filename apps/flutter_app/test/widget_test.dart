@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -12,6 +14,8 @@ class _FakeEngineBridge implements EngineBridge {
   int pauseCalls = 0;
   int resumeCalls = 0;
   int setOptionCalls = 0;
+  int setSurfaceSizeCalls = 0;
+  int sendInputCalls = 0;
 
   @override
   bool get isFfiAvailable => true;
@@ -70,6 +74,37 @@ class _FakeEngineBridge implements EngineBridge {
     required String value,
   }) async {
     setOptionCalls += 1;
+    return 0;
+  }
+
+  @override
+  Future<int> engineSetSurfaceSize({
+    required int width,
+    required int height,
+  }) async {
+    setSurfaceSizeCalls += 1;
+    return 0;
+  }
+
+  @override
+  Future<EngineFrameInfo?> engineGetFrameDesc() async {
+    return const EngineFrameInfo(
+      width: 16,
+      height: 16,
+      strideBytes: 64,
+      pixelFormat: 1,
+      frameSerial: 1,
+    );
+  }
+
+  @override
+  Future<Uint8List?> engineReadFrameRgba() async {
+    return Uint8List(16 * 16 * 4);
+  }
+
+  @override
+  Future<int> engineSendInput(EngineInputEventData event) async {
+    sendInputCalls += 1;
     return 0;
   }
 

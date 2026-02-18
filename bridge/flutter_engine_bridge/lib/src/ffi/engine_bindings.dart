@@ -6,6 +6,17 @@ import 'package:ffi/ffi.dart';
 const int kEngineApiVersion = 0x01000000;
 const int kEngineResultOk = 0;
 const int kEngineResultNotSupported = -3;
+const int kEnginePixelFormatUnknown = 0;
+const int kEnginePixelFormatRgba8888 = 1;
+
+const int kEngineInputEventPointerDown = 1;
+const int kEngineInputEventPointerMove = 2;
+const int kEngineInputEventPointerUp = 3;
+const int kEngineInputEventPointerScroll = 4;
+const int kEngineInputEventKeyDown = 5;
+const int kEngineInputEventKeyUp = 6;
+const int kEngineInputEventTextInput = 7;
+const int kEngineInputEventBack = 8;
 
 final class EngineCreateDesc extends Struct {
   @Uint32()
@@ -50,6 +61,93 @@ final class EngineOption extends Struct {
   external Pointer<Void> reservedPtr1;
 }
 
+final class EngineFrameDesc extends Struct {
+  @Uint32()
+  external int structSize;
+
+  @Uint32()
+  external int width;
+
+  @Uint32()
+  external int height;
+
+  @Uint32()
+  external int strideBytes;
+
+  @Uint32()
+  external int pixelFormat;
+
+  @Uint64()
+  external int frameSerial;
+
+  @Uint64()
+  external int reservedU640;
+
+  @Uint64()
+  external int reservedU641;
+
+  @Uint64()
+  external int reservedU642;
+
+  @Uint64()
+  external int reservedU643;
+
+  external Pointer<Void> reservedPtr0;
+  external Pointer<Void> reservedPtr1;
+  external Pointer<Void> reservedPtr2;
+  external Pointer<Void> reservedPtr3;
+}
+
+final class EngineInputEvent extends Struct {
+  @Uint32()
+  external int structSize;
+
+  @Uint32()
+  external int type;
+
+  @Uint64()
+  external int timestampMicros;
+
+  @Double()
+  external double x;
+
+  @Double()
+  external double y;
+
+  @Double()
+  external double deltaX;
+
+  @Double()
+  external double deltaY;
+
+  @Int32()
+  external int pointerId;
+
+  @Int32()
+  external int button;
+
+  @Int32()
+  external int keyCode;
+
+  @Int32()
+  external int modifiers;
+
+  @Uint32()
+  external int unicodeCodepoint;
+
+  @Uint32()
+  external int reservedU32;
+
+  @Uint64()
+  external int reservedU640;
+
+  @Uint64()
+  external int reservedU641;
+
+  external Pointer<Void> reservedPtr0;
+  external Pointer<Void> reservedPtr1;
+}
+
 typedef _EngineGetRuntimeApiVersionNative = Int32 Function(Pointer<Uint32>);
 typedef _EngineGetRuntimeApiVersionDart = int Function(Pointer<Uint32>);
 
@@ -79,6 +177,25 @@ typedef _EngineSetOptionNative =
     Int32 Function(Pointer<Void>, Pointer<EngineOption>);
 typedef _EngineSetOptionDart =
     int Function(Pointer<Void>, Pointer<EngineOption>);
+
+typedef _EngineSetSurfaceSizeNative =
+    Int32 Function(Pointer<Void>, Uint32, Uint32);
+typedef _EngineSetSurfaceSizeDart = int Function(Pointer<Void>, int, int);
+
+typedef _EngineGetFrameDescNative =
+    Int32 Function(Pointer<Void>, Pointer<EngineFrameDesc>);
+typedef _EngineGetFrameDescDart =
+    int Function(Pointer<Void>, Pointer<EngineFrameDesc>);
+
+typedef _EngineReadFrameRgbaNative =
+    Int32 Function(Pointer<Void>, Pointer<Void>, IntPtr);
+typedef _EngineReadFrameRgbaDart =
+    int Function(Pointer<Void>, Pointer<Void>, int);
+
+typedef _EngineSendInputNative =
+    Int32 Function(Pointer<Void>, Pointer<EngineInputEvent>);
+typedef _EngineSendInputDart =
+    int Function(Pointer<Void>, Pointer<EngineInputEvent>);
 
 typedef _EngineGetLastErrorNative = Pointer<Utf8> Function(Pointer<Void>);
 typedef _EngineGetLastErrorDart = Pointer<Utf8> Function(Pointer<Void>);
@@ -115,6 +232,23 @@ class EngineBindings {
           .lookupFunction<_EngineSetOptionNative, _EngineSetOptionDart>(
             'engine_set_option',
           ),
+      engineSetSurfaceSize = library
+          .lookupFunction<
+            _EngineSetSurfaceSizeNative,
+            _EngineSetSurfaceSizeDart
+          >('engine_set_surface_size'),
+      engineGetFrameDesc = library
+          .lookupFunction<_EngineGetFrameDescNative, _EngineGetFrameDescDart>(
+            'engine_get_frame_desc',
+          ),
+      engineReadFrameRgba = library
+          .lookupFunction<_EngineReadFrameRgbaNative, _EngineReadFrameRgbaDart>(
+            'engine_read_frame_rgba',
+          ),
+      engineSendInput = library
+          .lookupFunction<_EngineSendInputNative, _EngineSendInputDart>(
+            'engine_send_input',
+          ),
       engineGetLastError = library
           .lookupFunction<_EngineGetLastErrorNative, _EngineGetLastErrorDart>(
             'engine_get_last_error',
@@ -130,6 +264,11 @@ class EngineBindings {
   final int Function(Pointer<Void>) enginePause;
   final int Function(Pointer<Void>) engineResume;
   final int Function(Pointer<Void>, Pointer<EngineOption>) engineSetOption;
+  final int Function(Pointer<Void>, int, int) engineSetSurfaceSize;
+  final int Function(Pointer<Void>, Pointer<EngineFrameDesc>)
+  engineGetFrameDesc;
+  final int Function(Pointer<Void>, Pointer<Void>, int) engineReadFrameRgba;
+  final int Function(Pointer<Void>, Pointer<EngineInputEvent>) engineSendInput;
   final Pointer<Utf8> Function(Pointer<Void>) engineGetLastError;
 
   static String _lastLoadError = '';

@@ -1,4 +1,7 @@
-import 'package:flutter_engine_bridge/flutter_engine_bridge.dart';
+import 'dart:typed_data';
+
+import 'package:flutter_engine_bridge/flutter_engine_bridge.dart'
+    as plugin_bridge;
 
 import 'engine_bridge.dart';
 
@@ -8,9 +11,11 @@ EngineBridge createEngineBridge({String? ffiLibraryPath}) {
 
 class FlutterEngineBridgeAdapter implements EngineBridge {
   FlutterEngineBridgeAdapter({String? ffiLibraryPath})
-    : _delegate = FlutterEngineBridge(ffiLibraryPath: ffiLibraryPath);
+    : _delegate = plugin_bridge.FlutterEngineBridge(
+        ffiLibraryPath: ffiLibraryPath,
+      );
 
-  final FlutterEngineBridge _delegate;
+  final plugin_bridge.FlutterEngineBridge _delegate;
 
   @override
   bool get isFfiAvailable => _delegate.isFfiAvailable;
@@ -54,6 +59,50 @@ class FlutterEngineBridgeAdapter implements EngineBridge {
   @override
   Future<int> engineSetOption({required String key, required String value}) {
     return _delegate.engineSetOption(key: key, value: value);
+  }
+
+  @override
+  Future<int> engineSetSurfaceSize({required int width, required int height}) {
+    return _delegate.engineSetSurfaceSize(width: width, height: height);
+  }
+
+  @override
+  Future<EngineFrameInfo?> engineGetFrameDesc() async {
+    final frame = await _delegate.engineGetFrameDesc();
+    if (frame == null) {
+      return null;
+    }
+    return EngineFrameInfo(
+      width: frame.width,
+      height: frame.height,
+      strideBytes: frame.strideBytes,
+      pixelFormat: frame.pixelFormat,
+      frameSerial: frame.frameSerial,
+    );
+  }
+
+  @override
+  Future<Uint8List?> engineReadFrameRgba() {
+    return _delegate.engineReadFrameRgba();
+  }
+
+  @override
+  Future<int> engineSendInput(EngineInputEventData event) {
+    return _delegate.engineSendInput(
+      plugin_bridge.EngineInputEventData(
+        type: event.type,
+        timestampMicros: event.timestampMicros,
+        x: event.x,
+        y: event.y,
+        deltaX: event.deltaX,
+        deltaY: event.deltaY,
+        pointerId: event.pointerId,
+        button: event.button,
+        keyCode: event.keyCode,
+        modifiers: event.modifiers,
+        unicodeCodepoint: event.unicodeCodepoint,
+      ),
+    );
   }
 
   @override

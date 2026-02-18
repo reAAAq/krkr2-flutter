@@ -59,6 +59,51 @@ typedef struct engine_option_t {
   void* reserved_ptr[2];
 } engine_option_t;
 
+typedef enum engine_pixel_format_t {
+  ENGINE_PIXEL_FORMAT_UNKNOWN = 0,
+  ENGINE_PIXEL_FORMAT_RGBA8888 = 1
+} engine_pixel_format_t;
+
+typedef struct engine_frame_desc_t {
+  uint32_t struct_size;
+  uint32_t width;
+  uint32_t height;
+  uint32_t stride_bytes;
+  uint32_t pixel_format;
+  uint64_t frame_serial;
+  uint64_t reserved_u64[4];
+  void* reserved_ptr[4];
+} engine_frame_desc_t;
+
+typedef enum engine_input_event_type_t {
+  ENGINE_INPUT_EVENT_POINTER_DOWN = 1,
+  ENGINE_INPUT_EVENT_POINTER_MOVE = 2,
+  ENGINE_INPUT_EVENT_POINTER_UP = 3,
+  ENGINE_INPUT_EVENT_POINTER_SCROLL = 4,
+  ENGINE_INPUT_EVENT_KEY_DOWN = 5,
+  ENGINE_INPUT_EVENT_KEY_UP = 6,
+  ENGINE_INPUT_EVENT_TEXT_INPUT = 7,
+  ENGINE_INPUT_EVENT_BACK = 8
+} engine_input_event_type_t;
+
+typedef struct engine_input_event_t {
+  uint32_t struct_size;
+  uint32_t type;
+  uint64_t timestamp_micros;
+  double x;
+  double y;
+  double delta_x;
+  double delta_y;
+  int32_t pointer_id;
+  int32_t button;
+  int32_t key_code;
+  int32_t modifiers;
+  uint32_t unicode_codepoint;
+  uint32_t reserved_u32;
+  uint64_t reserved_u64[2];
+  void* reserved_ptr[2];
+} engine_input_event_t;
+
 /*
  * Returns runtime API version in out_api_version.
  * out_api_version must be non-null.
@@ -115,6 +160,35 @@ ENGINE_API_EXPORT engine_result_t engine_resume(engine_handle_t handle);
  */
 ENGINE_API_EXPORT engine_result_t engine_set_option(engine_handle_t handle,
                                                     const engine_option_t* option);
+
+/*
+ * Sets logical render surface size in pixels.
+ * width and height must be greater than zero.
+ */
+ENGINE_API_EXPORT engine_result_t engine_set_surface_size(engine_handle_t handle,
+                                                          uint32_t width,
+                                                          uint32_t height);
+
+/*
+ * Gets current frame descriptor.
+ * out_frame_desc->struct_size must be initialized by caller.
+ */
+ENGINE_API_EXPORT engine_result_t engine_get_frame_desc(
+    engine_handle_t handle, engine_frame_desc_t* out_frame_desc);
+
+/*
+ * Reads current frame into caller-provided RGBA8888 buffer.
+ * out_pixels_size must be >= stride_bytes * height from engine_get_frame_desc.
+ */
+ENGINE_API_EXPORT engine_result_t engine_read_frame_rgba(
+    engine_handle_t handle, void* out_pixels, size_t out_pixels_size);
+
+/*
+ * Sends one input event to the runtime.
+ * event->struct_size must be initialized by caller.
+ */
+ENGINE_API_EXPORT engine_result_t engine_send_input(engine_handle_t handle,
+                                                    const engine_input_event_t* event);
 
 /*
  * Returns last error message as UTF-8 null-terminated string.
