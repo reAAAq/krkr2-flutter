@@ -115,22 +115,18 @@ class _EngineSurfaceState extends State<EngineSurface> {
 
     _frameInFlight = true;
     try {
-      final EngineFrameInfo? frameInfo = await widget.bridge
-          .engineGetFrameDesc();
-      if (frameInfo == null) {
+      final EngineFrameData? frameData = await widget.bridge.engineReadFrame();
+      if (frameData == null) {
         return;
       }
+      final EngineFrameInfo frameInfo = frameData.info;
+      final Uint8List rgbaData = frameData.pixels;
 
       if (frameInfo.width <= 0 || frameInfo.height <= 0) {
         return;
       }
 
       if (frameInfo.frameSerial == _lastFrameSerial) {
-        return;
-      }
-
-      final Uint8List? rgbaData = await widget.bridge.engineReadFrameRgba();
-      if (rgbaData == null) {
         return;
       }
 

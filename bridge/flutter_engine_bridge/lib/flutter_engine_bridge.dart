@@ -12,7 +12,8 @@ export 'src/ffi/engine_bindings.dart'
         kEngineInputEventTextInput,
         kEnginePixelFormatRgba8888,
         kEnginePixelFormatUnknown;
-export 'src/ffi/engine_ffi.dart' show EngineFrameInfo, EngineInputEventData;
+export 'src/ffi/engine_ffi.dart'
+    show EngineFrameData, EngineFrameInfo, EngineInputEventData;
 
 import 'flutter_engine_bridge_platform_interface.dart';
 import 'src/ffi/engine_bindings.dart';
@@ -145,6 +146,27 @@ class FlutterEngineBridge {
     }
 
     final frameData = ffi.readFrameRgba();
+    if (frameData == null) {
+      _fallbackLastError = ffi.lastError();
+    } else {
+      _fallbackLastError = '';
+    }
+    return frameData;
+  }
+
+  Future<EngineFrameData?> engineReadFrame() async {
+    final ffi = _ffiBridge;
+    if (ffi == null) {
+      final platformVersion = await _platform.getPlatformVersion();
+      final versionLabel = platformVersion ?? 'unknown';
+      _fallbackLastError = _buildFallbackError(
+        'FFI unavailable for engine_read_frame_rgba. '
+        'MethodChannel fallback active ($versionLabel).',
+      );
+      return null;
+    }
+
+    final frameData = ffi.readFrameRgbaWithDesc();
     if (frameData == null) {
       _fallbackLastError = ffi.lastError();
     } else {

@@ -16,6 +16,13 @@ class EngineFrameInfo {
   final int frameSerial;
 }
 
+class EngineFrameData {
+  const EngineFrameData({required this.info, required this.pixels});
+
+  final EngineFrameInfo info;
+  final Uint8List pixels;
+}
+
 class EngineInputEventData {
   const EngineInputEventData({
     required this.type,
@@ -61,6 +68,7 @@ abstract interface class EngineBridge {
   Future<int> engineSetSurfaceSize({required int width, required int height});
   Future<EngineFrameInfo?> engineGetFrameDesc();
   Future<Uint8List?> engineReadFrameRgba();
+  Future<EngineFrameData?> engineReadFrame();
   Future<int> engineSendInput(EngineInputEventData event);
   Future<int> engineRuntimeApiVersion();
 

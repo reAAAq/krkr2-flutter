@@ -103,6 +103,20 @@ class _FakeEngineBridge implements EngineBridge {
   }
 
   @override
+  Future<EngineFrameData?> engineReadFrame() async {
+    return EngineFrameData(
+      info: const EngineFrameInfo(
+        width: 16,
+        height: 16,
+        strideBytes: 64,
+        pixelFormat: 1,
+        frameSerial: 1,
+      ),
+      pixels: Uint8List(16 * 16 * 4),
+    );
+  }
+
+  @override
   Future<int> engineSendInput(EngineInputEventData event) async {
     sendInputCalls += 1;
     return 0;

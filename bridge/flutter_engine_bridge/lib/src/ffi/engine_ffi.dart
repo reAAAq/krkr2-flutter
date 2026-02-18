@@ -21,6 +21,13 @@ class EngineFrameInfo {
   final int frameSerial;
 }
 
+class EngineFrameData {
+  const EngineFrameData({required this.info, required this.pixels});
+
+  final EngineFrameInfo info;
+  final Uint8List pixels;
+}
+
 class EngineInputEventData {
   const EngineInputEventData({
     required this.type,
@@ -237,6 +244,43 @@ class EngineFfiBridge {
     } finally {
       calloc.free(buffer);
     }
+  }
+
+  EngineFrameData? readFrameRgbaWithDesc({int maxRetries = 1}) {
+    for (int attempt = 0; attempt <= maxRetries; attempt++) {
+      final EngineFrameInfo? frameDesc = getFrameDesc();
+      if (frameDesc == null) {
+        return null;
+      }
+
+      final int bufferSize = frameDesc.strideBytes * frameDesc.height;
+      if (bufferSize <= 0) {
+        return EngineFrameData(info: frameDesc, pixels: Uint8List(0));
+      }
+
+      final Pointer<Uint8> buffer = calloc<Uint8>(bufferSize);
+      try {
+        final int result = _bindings.engineReadFrameRgba(
+          _handle,
+          buffer.cast<Void>(),
+          bufferSize,
+        );
+        if (result == kEngineResultOk) {
+          return EngineFrameData(
+            info: frameDesc,
+            pixels: Uint8List.fromList(buffer.asTypedList(bufferSize)),
+          );
+        }
+        // Surface size can race with frame read; retry once with fresh desc.
+        if (result == kEngineResultInvalidArgument && attempt < maxRetries) {
+          continue;
+        }
+        return null;
+      } finally {
+        calloc.free(buffer);
+      }
+    }
+    return null;
   }
 
   int sendInput(EngineInputEventData event) {

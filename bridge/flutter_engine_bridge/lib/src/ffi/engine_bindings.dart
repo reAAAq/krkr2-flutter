@@ -5,6 +5,7 @@ import 'package:ffi/ffi.dart';
 
 const int kEngineApiVersion = 0x01000000;
 const int kEngineResultOk = 0;
+const int kEngineResultInvalidArgument = -1;
 const int kEngineResultNotSupported = -3;
 const int kEnginePixelFormatUnknown = 0;
 const int kEnginePixelFormatRgba8888 = 1;

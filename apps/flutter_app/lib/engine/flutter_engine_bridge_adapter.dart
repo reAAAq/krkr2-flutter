@@ -87,6 +87,25 @@ class FlutterEngineBridgeAdapter implements EngineBridge {
   }
 
   @override
+  Future<EngineFrameData?> engineReadFrame() async {
+    final plugin_bridge.EngineFrameData? frame = await _delegate
+        .engineReadFrame();
+    if (frame == null) {
+      return null;
+    }
+    return EngineFrameData(
+      info: EngineFrameInfo(
+        width: frame.info.width,
+        height: frame.info.height,
+        strideBytes: frame.info.strideBytes,
+        pixelFormat: frame.info.pixelFormat,
+        frameSerial: frame.info.frameSerial,
+      ),
+      pixels: frame.pixels,
+    );
+  }
+
+  @override
   Future<int> engineSendInput(EngineInputEventData event) {
     return _delegate.engineSendInput(
       plugin_bridge.EngineInputEventData(
