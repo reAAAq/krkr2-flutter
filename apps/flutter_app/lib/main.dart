@@ -42,7 +42,8 @@ class EngineBridgeHomePage extends StatefulWidget {
   State<EngineBridgeHomePage> createState() => _EngineBridgeHomePageState();
 }
 
-class _EngineBridgeHomePageState extends State<EngineBridgeHomePage> {
+class _EngineBridgeHomePageState extends State<EngineBridgeHomePage>
+    with WidgetsBindingObserver {
   static const int _engineResultOk = 0;
   static const int _maxEventLogSize = 120;
   static const int _smokeTickIterations = 3;
@@ -69,6 +70,9 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage> {
   bool _busy = false;
   bool _tickInFlight = false;
   bool _isTicking = false;
+  bool _autoPausedByLifecycle = false;
+  bool _resumeTickLoopAfterLifecyclePause = false;
+  bool _lifecycleTransitionInFlight = false;
 
   String _backendInfo = _loading;
   String _platformInfo = _loading;
@@ -84,6 +88,7 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _recreateBridge();
     _appendLog('App started');
     _loadBridgeInfo();
@@ -91,12 +96,29 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _stopTickLoop(updateStatus: false, notify: false);
     _engineLibraryPathController.dispose();
     _gamePathController.dispose();
     _optionKeyController.dispose();
     _optionValueController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.resumed:
+        unawaited(_resumeForLifecycle());
+        break;
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.paused:
+        unawaited(_pauseForLifecycle());
+        break;
+      case AppLifecycleState.detached:
+        break;
+    }
   }
 
   String? _currentEngineLibraryPathOrNull() {
@@ -123,6 +145,8 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage> {
       setState(() {
         _recreateBridge();
         _lastResult = 'bridge_reload => done';
+        _autoPausedByLifecycle = false;
+        _resumeTickLoopAfterLifecyclePause = false;
       });
     } else {
       _recreateBridge();
@@ -235,6 +259,8 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage> {
       if (result == _engineResultOk && mounted) {
         setState(() {
           _tickCount = 0;
+          _autoPausedByLifecycle = false;
+          _resumeTickLoopAfterLifecyclePause = false;
         });
       }
     } finally {
@@ -254,6 +280,8 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage> {
         failureStatus: 'Pause failed',
       );
       if (result == _engineResultOk) {
+        _autoPausedByLifecycle = false;
+        _resumeTickLoopAfterLifecyclePause = false;
         _stopTickLoop(updateStatus: false);
       }
     } finally {
@@ -272,8 +300,97 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage> {
         successStatus: 'Opened',
         failureStatus: 'Resume failed',
       );
+      if (result == _engineResultOk) {
+        _autoPausedByLifecycle = false;
+      }
     } finally {
       _setBusy(false);
+    }
+  }
+
+  Future<void> _pauseForLifecycle() async {
+    if (!mounted ||
+        _lifecycleTransitionInFlight ||
+        _busy ||
+        _autoPausedByLifecycle) {
+      return;
+    }
+    if (_engineStatus != 'Opened' && _engineStatus != 'Ticking') {
+      return;
+    }
+
+    _lifecycleTransitionInFlight = true;
+    final bool shouldResumeTick = _isTicking;
+    if (shouldResumeTick) {
+      _stopTickLoop(updateStatus: false);
+    }
+
+    try {
+      final int result = await _bridge.enginePause();
+      final String error = _bridge.engineGetLastError();
+      if (!mounted) return;
+      if (result != _engineResultOk) {
+        _appendLog(
+          'lifecycle pause failed: result=$result, '
+          'error=${error.isEmpty ? "<empty>" : error}',
+        );
+        return;
+      }
+      setState(() {
+        _autoPausedByLifecycle = true;
+        _resumeTickLoopAfterLifecyclePause = shouldResumeTick;
+        _engineStatus = 'Paused';
+        _lastResult = 'lifecycle_pause => 0';
+        _lastError = error.isEmpty
+            ? 'Last error: <empty>'
+            : 'Last error: $error';
+      });
+      _appendLog(
+        'Lifecycle paused engine (resume_tick=$_resumeTickLoopAfterLifecyclePause)',
+      );
+    } finally {
+      _lifecycleTransitionInFlight = false;
+    }
+  }
+
+  Future<void> _resumeForLifecycle() async {
+    if (!mounted ||
+        _lifecycleTransitionInFlight ||
+        _busy ||
+        !_autoPausedByLifecycle) {
+      return;
+    }
+
+    _lifecycleTransitionInFlight = true;
+    try {
+      final int result = await _bridge.engineResume();
+      final String error = _bridge.engineGetLastError();
+      if (!mounted) return;
+      if (result != _engineResultOk) {
+        _appendLog(
+          'lifecycle resume failed: result=$result, '
+          'error=${error.isEmpty ? "<empty>" : error}',
+        );
+        return;
+      }
+
+      final bool resumeTick = _resumeTickLoopAfterLifecyclePause;
+      setState(() {
+        _autoPausedByLifecycle = false;
+        _resumeTickLoopAfterLifecyclePause = false;
+        _engineStatus = 'Opened';
+        _lastResult = 'lifecycle_resume => 0';
+        _lastError = error.isEmpty
+            ? 'Last error: <empty>'
+            : 'Last error: $error';
+      });
+      _appendLog('Lifecycle resumed engine');
+
+      if (resumeTick) {
+        unawaited(_startTickLoop());
+      }
+    } finally {
+      _lifecycleTransitionInFlight = false;
     }
   }
 
