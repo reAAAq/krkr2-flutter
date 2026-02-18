@@ -19,10 +19,40 @@ void main() {
   });
 
   test('getPlatformVersion', () async {
-    FlutterEngineBridge flutterEngineBridgePlugin = FlutterEngineBridge();
-    MockFlutterEngineBridgePlatform fakePlatform = MockFlutterEngineBridgePlatform();
-    FlutterEngineBridgePlatform.instance = fakePlatform;
+    final MockFlutterEngineBridgePlatform fakePlatform = MockFlutterEngineBridgePlatform();
+    final FlutterEngineBridge flutterEngineBridgePlugin = FlutterEngineBridge(
+      platform: fakePlatform,
+    );
 
     expect(await flutterEngineBridgePlugin.getPlatformVersion(), '42');
+  });
+
+  test('method_channel fallback is used when ffi is unavailable', () async {
+    final MockFlutterEngineBridgePlatform fakePlatform = MockFlutterEngineBridgePlatform();
+    final FlutterEngineBridge bridge = FlutterEngineBridge(platform: fakePlatform);
+
+    expect(bridge.isFfiAvailable, isFalse);
+    expect(await bridge.getBackendDescription(), 'method_channel(42)');
+  });
+
+  test('engineCreate returns not_supported on fallback path', () async {
+    final MockFlutterEngineBridgePlatform fakePlatform = MockFlutterEngineBridgePlatform();
+    final FlutterEngineBridge bridge = FlutterEngineBridge(platform: fakePlatform);
+
+    final int result = await bridge.engineCreate();
+    expect(result, -3);
+    expect(bridge.engineGetLastError(), contains('FFI unavailable for engine_create'));
+  });
+
+  test('engineRuntimeApiVersion returns not_supported on fallback path', () async {
+    final MockFlutterEngineBridgePlatform fakePlatform = MockFlutterEngineBridgePlatform();
+    final FlutterEngineBridge bridge = FlutterEngineBridge(platform: fakePlatform);
+
+    final int result = await bridge.engineRuntimeApiVersion();
+    expect(result, -3);
+    expect(
+      bridge.engineGetLastError(),
+      contains('FFI unavailable for engine_get_runtime_api_version'),
+    );
   });
 }
