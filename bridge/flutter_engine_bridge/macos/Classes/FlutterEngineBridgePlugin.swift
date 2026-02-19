@@ -2,6 +2,9 @@ import Accelerate
 import Cocoa
 import CoreVideo
 import FlutterMacOS
+import IOSurface
+
+// MARK: - Legacy RGBA upload texture (backward compatibility)
 
 private final class EngineHostTexture: NSObject, FlutterTexture {
   private let lock = NSLock()
@@ -92,9 +95,77 @@ private final class EngineHostTexture: NSObject, FlutterTexture {
   }
 }
 
+// MARK: - IOSurface zero-copy texture
+
+private final class EngineIOSurfaceTexture: NSObject, FlutterTexture {
+  private let lock = NSLock()
+  private var pixelBuffer: CVPixelBuffer?
+  private(set) var ioSurfaceID: UInt32 = 0
+  private(set) var pixelWidth: Int = 0
+  private(set) var pixelHeight: Int = 0
+
+  /// Create (or recreate) the IOSurface-backed CVPixelBuffer.
+  /// Returns the IOSurfaceID that the C++ engine should render into.
+  func createSurface(width: Int, height: Int) -> UInt32? {
+    guard width > 0, height > 0 else { return nil }
+
+    lock.lock()
+    defer { lock.unlock() }
+
+    // Reuse if size unchanged
+    if pixelWidth == width && pixelHeight == height && ioSurfaceID != 0 {
+      return ioSurfaceID
+    }
+
+    // Create IOSurface-backed CVPixelBuffer (BGRA format for Metal/Flutter)
+    var buffer: CVPixelBuffer?
+    let attrs: [CFString: Any] = [
+      kCVPixelBufferCGImageCompatibilityKey: true,
+      kCVPixelBufferCGBitmapContextCompatibilityKey: true,
+      kCVPixelBufferIOSurfacePropertiesKey: [:] as [String: Any],
+      kCVPixelBufferMetalCompatibilityKey: true,
+    ]
+    let status = CVPixelBufferCreate(
+      kCFAllocatorDefault,
+      width,
+      height,
+      kCVPixelFormatType_32BGRA,
+      attrs as CFDictionary,
+      &buffer
+    )
+    guard status == kCVReturnSuccess, let newBuffer = buffer else {
+      return nil
+    }
+
+    // Get the IOSurface from the CVPixelBuffer
+    guard let surfaceUnmanaged = CVPixelBufferGetIOSurface(newBuffer) else {
+      return nil
+    }
+    let surface = surfaceUnmanaged.takeUnretainedValue()
+    let surfaceID = IOSurfaceGetID(surface)
+
+    pixelBuffer = newBuffer
+    pixelWidth = width
+    pixelHeight = height
+    ioSurfaceID = surfaceID
+
+    return surfaceID
+  }
+
+  func copyPixelBuffer() -> Unmanaged<CVPixelBuffer>? {
+    lock.lock()
+    defer { lock.unlock() }
+    guard let pixelBuffer else { return nil }
+    return Unmanaged.passRetained(pixelBuffer)
+  }
+}
+
+// MARK: - Plugin
+
 public class FlutterEngineBridgePlugin: NSObject, FlutterPlugin {
   private let registrar: FlutterPluginRegistrar
   private var textures: [Int64: EngineHostTexture] = [:]
+  private var ioSurfaceTextures: [Int64: EngineIOSurfaceTexture] = [:]
 
   init(registrar: FlutterPluginRegistrar) {
     self.registrar = registrar
@@ -114,6 +185,9 @@ public class FlutterEngineBridgePlugin: NSObject, FlutterPlugin {
     for (textureId, _) in textures {
       registrar.textures.unregisterTexture(textureId)
     }
+    for (textureId, _) in ioSurfaceTextures {
+      registrar.textures.unregisterTexture(textureId)
+    }
   }
 
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -121,6 +195,7 @@ public class FlutterEngineBridgePlugin: NSObject, FlutterPlugin {
     case "getPlatformVersion":
       result("macOS " + ProcessInfo.processInfo.operatingSystemVersionString)
 
+    // --- Legacy RGBA texture ---
     case "createTexture":
       let texture = EngineHostTexture()
       let textureId = registrar.textures.register(texture)
@@ -195,6 +270,128 @@ public class FlutterEngineBridgePlugin: NSObject, FlutterPlugin {
       }
       let textureId = textureIdNumber.int64Value
       textures.removeValue(forKey: textureId)
+      registrar.textures.unregisterTexture(textureId)
+      result(nil)
+
+    // --- IOSurface zero-copy texture ---
+    case "createIOSurfaceTexture":
+      guard let args = call.arguments as? [String: Any],
+        let widthNumber = args["width"] as? NSNumber,
+        let heightNumber = args["height"] as? NSNumber
+      else {
+        result(
+          FlutterError(
+            code: "invalid_args",
+            message: "createIOSurfaceTexture requires width/height",
+            details: nil
+          )
+        )
+        return
+      }
+
+      let width = widthNumber.intValue
+      let height = heightNumber.intValue
+      let texture = EngineIOSurfaceTexture()
+      guard let ioSurfaceID = texture.createSurface(width: width, height: height) else {
+        result(
+          FlutterError(
+            code: "iosurface_failed",
+            message: "Failed to create IOSurface-backed texture",
+            details: nil
+          )
+        )
+        return
+      }
+
+      let textureId = registrar.textures.register(texture)
+      ioSurfaceTextures[textureId] = texture
+      result([
+        "textureId": textureId,
+        "ioSurfaceID": Int(ioSurfaceID),
+        "width": width,
+        "height": height,
+      ] as [String: Any])
+
+    case "notifyFrameAvailable":
+      guard let args = call.arguments as? [String: Any],
+        let textureIdNumber = args["textureId"] as? NSNumber
+      else {
+        result(
+          FlutterError(
+            code: "invalid_args",
+            message: "notifyFrameAvailable requires textureId",
+            details: nil
+          )
+        )
+        return
+      }
+      let textureId = textureIdNumber.int64Value
+      registrar.textures.textureFrameAvailable(textureId)
+      result(nil)
+
+    case "resizeIOSurfaceTexture":
+      guard let args = call.arguments as? [String: Any],
+        let textureIdNumber = args["textureId"] as? NSNumber,
+        let widthNumber = args["width"] as? NSNumber,
+        let heightNumber = args["height"] as? NSNumber
+      else {
+        result(
+          FlutterError(
+            code: "invalid_args",
+            message: "resizeIOSurfaceTexture requires textureId/width/height",
+            details: nil
+          )
+        )
+        return
+      }
+      let textureId = textureIdNumber.int64Value
+      let width = widthNumber.intValue
+      let height = heightNumber.intValue
+
+      guard let texture = ioSurfaceTextures[textureId] else {
+        result(
+          FlutterError(
+            code: "invalid_args",
+            message: "IOSurface texture id not found",
+            details: nil
+          )
+        )
+        return
+      }
+
+      guard let newIOSurfaceID = texture.createSurface(width: width, height: height) else {
+        result(
+          FlutterError(
+            code: "iosurface_failed",
+            message: "Failed to resize IOSurface",
+            details: nil
+          )
+        )
+        return
+      }
+
+      result([
+        "textureId": textureId,
+        "ioSurfaceID": Int(newIOSurfaceID),
+        "width": width,
+        "height": height,
+      ] as [String: Any])
+
+    case "disposeIOSurfaceTexture":
+      guard let args = call.arguments as? [String: Any],
+        let textureIdNumber = args["textureId"] as? NSNumber
+      else {
+        result(
+          FlutterError(
+            code: "invalid_args",
+            message: "disposeIOSurfaceTexture requires textureId",
+            details: nil
+          )
+        )
+        return
+      }
+      let textureId = textureIdNumber.int64Value
+      ioSurfaceTextures.removeValue(forKey: textureId)
       registrar.textures.unregisterTexture(textureId)
       result(nil)
 
