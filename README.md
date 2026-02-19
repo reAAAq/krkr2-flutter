@@ -59,7 +59,7 @@ krkr2/
 
 ## 🔥 近期任务
 
-> **抛弃 Cocos2d-x 渲染层**：当前引擎渲染管线依赖 Cocos2d-x + GLFW，计划将其完全移除，改为由 Flutter 侧直接管理 OpenGL / Metal / Vulkan 渲染上下文，引擎核心只负责提交绘制指令。这将大幅简化架构、减少第三方依赖，并为 Texture 模式和多平台适配扫清障碍。
+> **使用 ANGLE 替代 Cocos2d-x 渲染层**：当前引擎渲染管线依赖 Cocos2d-x + GLFW，计划引入 [ANGLE](https://github.com/google/angle) (Almost Native Graphics Layer Engine) 将其完全替代。ANGLE 由 Google 维护，可将 OpenGL ES 2.0 调用透明翻译为各平台原生图形 API（macOS → Metal、Windows → D3D11、Linux → Vulkan/Desktop GL），现有引擎渲染代码几乎无需改动。引擎将通过 EGL Pbuffer Surface 实现离屏渲染，渲染结果通过 GPU 纹理共享（IOSurface 等）传给 Flutter，实现零拷贝高性能显示。这将大幅简化架构、统一跨平台图形接口，并为 Texture 模式和多平台适配扫清障碍。
 
 ## 开发状态
 

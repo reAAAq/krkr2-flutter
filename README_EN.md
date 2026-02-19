@@ -22,7 +22,7 @@
 
 ## 🔥 Upcoming Task
 
-> **Drop Cocos2d-x Rendering Layer**: The current engine rendering pipeline relies on Cocos2d-x + GLFW. We plan to remove it entirely and let the Flutter side manage the OpenGL / Metal / Vulkan rendering context directly, while the engine core only submits draw commands. This will greatly simplify the architecture, reduce third-party dependencies, and pave the way for Texture mode and multi-platform adaptation.
+> **Replace Cocos2d-x with ANGLE**: The current engine rendering pipeline relies on Cocos2d-x + GLFW. We plan to replace it entirely with [ANGLE](https://github.com/google/angle) (Almost Native Graphics Layer Engine), maintained by Google. ANGLE transparently translates OpenGL ES 2.0 calls to native graphics APIs on each platform (macOS → Metal, Windows → D3D11, Linux → Vulkan/Desktop GL), so the existing engine rendering code requires virtually no changes. The engine will use EGL Pbuffer Surfaces for offscreen rendering, and frames will be shared with Flutter via GPU texture sharing (IOSurface, etc.) for zero-copy high-performance display. This will greatly simplify the architecture, unify the cross-platform graphics interface, and pave the way for Texture mode and multi-platform adaptation.
 
 ## Architecture
 
