@@ -295,11 +295,13 @@ class EngineBindings {
     final List<String> errors = <String>[];
     _lastLoadError = '';
 
-    if (overridePath != null && overridePath.isNotEmpty) {
+    final String normalizedOverridePath = overridePath?.trim() ?? '';
+    if (normalizedOverridePath.isNotEmpty) {
       try {
-        return DynamicLibrary.open(overridePath);
+        return DynamicLibrary.open(normalizedOverridePath);
       } catch (error) {
-        errors.add('open("$overridePath") failed: $error');
+        _lastLoadError = 'open("$normalizedOverridePath") failed: $error';
+        return null;
       }
     }
 

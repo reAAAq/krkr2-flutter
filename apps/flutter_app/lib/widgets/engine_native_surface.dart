@@ -2,11 +2,15 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 
 import '../engine/engine_bridge.dart';
 
 const String _nativeSurfaceViewType =
     'flutter_engine_bridge/native_engine_surface';
+const int _inputPointerDown = 1;
+const int _inputPointerUp = 3;
 
 class EngineNativeSurface extends StatefulWidget {
   const EngineNativeSurface({
@@ -27,8 +31,14 @@ class EngineNativeSurface extends StatefulWidget {
 }
 
 class _EngineNativeSurfaceState extends State<EngineNativeSurface> {
+  static const MethodChannel _pluginChannel = MethodChannel(
+    'flutter_engine_bridge',
+  );
+
   Timer? _windowHandlePollTimer;
+  Timer? _nativeInputPollTimer;
   bool _nativeHandleQueryInFlight = false;
+  bool _nativeInputDrainInFlight = false;
   bool _attachInFlight = false;
   bool _attached = false;
   bool _attachedAsNativeView = false;
@@ -66,6 +76,7 @@ class _EngineNativeSurfaceState extends State<EngineNativeSurface> {
   @override
   void dispose() {
     _windowHandlePollTimer?.cancel();
+    _nativeInputPollTimer?.cancel();
     unawaited(_detachIfNeeded());
     super.dispose();
   }
@@ -74,6 +85,8 @@ class _EngineNativeSurfaceState extends State<EngineNativeSurface> {
     if (!widget.active || !Platform.isMacOS) {
       _windowHandlePollTimer?.cancel();
       _windowHandlePollTimer = null;
+      _nativeInputPollTimer?.cancel();
+      _nativeInputPollTimer = null;
       return;
     }
 
@@ -84,6 +97,11 @@ class _EngineNativeSurfaceState extends State<EngineNativeSurface> {
         unawaited(_tryAttach());
       },
     );
+    _nativeInputPollTimer ??= Timer.periodic(const Duration(milliseconds: 16), (
+      _,
+    ) {
+      unawaited(_drainNativePointerEvents());
+    });
 
     unawaited(_ensureNativeHandles());
     unawaited(_tryAttach());
@@ -267,6 +285,80 @@ class _EngineNativeSurfaceState extends State<EngineNativeSurface> {
     widget.onError?.call(message);
   }
 
+  Future<void> _drainNativePointerEvents() async {
+    if (!widget.active ||
+        !_attachedAsNativeView ||
+        _nativeInputDrainInFlight ||
+        _platformViewId == null) {
+      return;
+    }
+    _nativeInputDrainInFlight = true;
+    try {
+      final List<dynamic>? events = await _pluginChannel
+          .invokeMethod<List<dynamic>>(
+            'drainNativePointerEvents',
+            <String, Object>{'viewId': _platformViewId!},
+          );
+      if (events == null || events.isEmpty) {
+        return;
+      }
+
+      int? asInt(dynamic value) {
+        if (value is int) return value;
+        if (value is num) return value.toInt();
+        return null;
+      }
+
+      double asDouble(dynamic value) {
+        if (value is double) return value;
+        if (value is num) return value.toDouble();
+        return 0;
+      }
+
+      for (final dynamic rawEvent in events) {
+        if (rawEvent is! Map) {
+          continue;
+        }
+        final Map<dynamic, dynamic> args = rawEvent;
+
+        final int? type = asInt(args['type']);
+        if (type == null) {
+          continue;
+        }
+
+        await _sendInputEvent(
+          EngineInputEventData(
+            type: type,
+            timestampMicros: asInt(args['timestampMicros']) ?? 0,
+            x: asDouble(args['x']),
+            y: asDouble(args['y']),
+            deltaX: asDouble(args['deltaX']),
+            deltaY: asDouble(args['deltaY']),
+            pointerId: asInt(args['pointerId']) ?? 0,
+            button: asInt(args['button']) ?? 0,
+          ),
+        );
+      }
+    } finally {
+      _nativeInputDrainInFlight = false;
+    }
+  }
+
+  Future<void> _sendInputEvent(EngineInputEventData event) async {
+    final int result = await widget.bridge.engineSendInput(event);
+    if (result != 0) {
+      _reportError(
+        'engine_send_input failed: result=$result, error=${widget.bridge.engineGetLastError()}',
+      );
+      return;
+    }
+    if (event.type == _inputPointerDown || event.type == _inputPointerUp) {
+      widget.onLog?.call(
+        'native input forwarded: type=${event.type} pointer=${event.pointerId} x=${event.x.toStringAsFixed(1)} y=${event.y.toStringAsFixed(1)}',
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return AspectRatio(
@@ -304,6 +396,7 @@ class _EngineNativeSurfaceState extends State<EngineNativeSurface> {
                   AppKitView(
                     viewType: _nativeSurfaceViewType,
                     onPlatformViewCreated: _onPlatformViewCreated,
+                    hitTestBehavior: PlatformViewHitTestBehavior.opaque,
                   ),
                 Positioned(
                   left: 10,

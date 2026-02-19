@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'engine/engine_bridge.dart';
@@ -933,14 +934,21 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage>
                       surfaceSection,
                       const SizedBox(height: 16),
                       Expanded(
-                        child: SingleChildScrollView(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              infoSection,
-                              const SizedBox(height: 20),
-                              controlsSection,
-                            ],
+                        child: ScrollConfiguration(
+                          behavior: ScrollConfiguration.of(context).copyWith(
+                            dragDevices: <PointerDeviceKind>{
+                              PointerDeviceKind.mouse,
+                            },
+                          ),
+                          child: SingleChildScrollView(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                infoSection,
+                                const SizedBox(height: 20),
+                                controlsSection,
+                              ],
+                            ),
                           ),
                         ),
                       ),

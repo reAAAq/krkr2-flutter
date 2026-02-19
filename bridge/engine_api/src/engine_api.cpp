@@ -3,7 +3,9 @@
 #if defined(ENGINE_API_USE_KRKR2_RUNTIME)
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
+#include <deque>
 #include <new>
 #include <string>
 #include <unordered_set>
@@ -21,17 +23,25 @@
 #include <spdlog/spdlog.h>
 
 #include "base/CCDirector.h"
+#include "base/CCEventDispatcher.h"
+#include "base/CCEventKeyboard.h"
+#include "base/CCEventMouse.h"
 #include "environ/Application.h"
 #include "environ/cocos2d/AppDelegate.h"
 #include "environ/cocos2d/MainScene.h"
 #include "base/SysInitIntf.h"
 #include "base/impl/SysInitImpl.h"
+#include "platform/CCGLView.h"
 #include "visual/ogl/ogl_common.h"
+
+#if defined(TARGET_OS_MAC) && TARGET_OS_MAC && !TARGET_OS_IPHONE
+#include "platform/desktop/CCGLViewImpl-desktop.h"
+#endif
 
 int TVPDrawSceneOnce(int interval);
 
 struct engine_handle_s {
-  std::mutex mutex;
+  std::recursive_mutex mutex;
   std::string last_error;
   int state = 0;
   std::thread::id owner_thread;
@@ -44,6 +54,9 @@ struct engine_handle_s {
   uint32_t frame_stride_bytes = 0;
   std::vector<uint8_t> frame_rgba;
   bool frame_ready = false;
+  std::unordered_set<intptr_t> active_pointer_ids;
+  std::deque<engine_input_event_t> pending_input_events;
+  bool native_mouse_callbacks_disabled = false;
 };
 
 namespace {
@@ -59,7 +72,7 @@ inline int ToStateValue(EngineState state) {
   return static_cast<int>(state);
 }
 
-std::mutex g_registry_mutex;
+std::recursive_mutex g_registry_mutex;
 std::unordered_set<engine_handle_t> g_live_handles;
 thread_local std::string g_thread_error;
 engine_handle_t g_runtime_owner = nullptr;
@@ -244,6 +257,171 @@ bool ReadCurrentFrameRgba(const FrameReadbackLayout& layout, void* out_pixels) {
   return true;
 }
 
+#if defined(TARGET_OS_MAC) && TARGET_OS_MAC && !TARGET_OS_IPHONE
+bool IsFinitePointerValue(double value) {
+  return std::isfinite(value);
+}
+
+cocos2d::EventMouse::MouseButton ResolveMouseButtonFromMask(int32_t button_mask) {
+  if ((button_mask & 2) != 0) {
+    return cocos2d::EventMouse::MouseButton::BUTTON_RIGHT;
+  }
+  if ((button_mask & 4) != 0) {
+    return cocos2d::EventMouse::MouseButton::BUTTON_MIDDLE;
+  }
+  return cocos2d::EventMouse::MouseButton::BUTTON_LEFT;
+}
+
+void DispatchMouseEvent(cocos2d::EventDispatcher* dispatcher,
+                        cocos2d::GLView* gl_view,
+                        cocos2d::EventMouse::MouseEventType type,
+                        float x,
+                        float y,
+                        int32_t button_mask,
+                        float scroll_x,
+                        float scroll_y) {
+  if (dispatcher == nullptr || gl_view == nullptr) {
+    return;
+  }
+
+  cocos2d::EventMouse event(type);
+  const cocos2d::Rect& viewport = gl_view->getViewPortRect();
+  const float cursor_x = (x - viewport.origin.x) / gl_view->getScaleX();
+  const float cursor_y =
+      (viewport.origin.y + viewport.size.height - y) / gl_view->getScaleY();
+  event.setCursorPosition(cursor_x, cursor_y);
+
+  if (type == cocos2d::EventMouse::MouseEventType::MOUSE_SCROLL) {
+    event.setScrollData(scroll_x, -scroll_y);
+  } else {
+    event.setMouseButton(ResolveMouseButtonFromMask(button_mask));
+  }
+
+  dispatcher->dispatchEvent(&event);
+}
+
+engine_result_t DispatchInputEventNow(engine_handle_s* impl,
+                                      const engine_input_event_t& event,
+                                      const char** out_error_message) {
+  auto* director = cocos2d::Director::getInstance();
+  if (director == nullptr) {
+    if (out_error_message != nullptr) {
+      *out_error_message = "cocos director is unavailable";
+    }
+    return ENGINE_RESULT_INTERNAL_ERROR;
+  }
+  auto* gl_view = director->getOpenGLView();
+  if (gl_view == nullptr) {
+    if (out_error_message != nullptr) {
+      *out_error_message = "OpenGL view is unavailable";
+    }
+    return ENGINE_RESULT_INVALID_STATE;
+  }
+  auto* dispatcher = director->getEventDispatcher();
+  if (dispatcher == nullptr) {
+    if (out_error_message != nullptr) {
+      *out_error_message = "event dispatcher is unavailable";
+    }
+    return ENGINE_RESULT_INTERNAL_ERROR;
+  }
+
+  const float x = static_cast<float>(event.x);
+  const float y = static_cast<float>(event.y);
+  constexpr intptr_t kPrimaryTouchPointerId = 0;
+  const bool left_button = (event.button & 1) != 0;
+  switch (event.type) {
+    case ENGINE_INPUT_EVENT_POINTER_DOWN: {
+      if (auto logger = spdlog::get("core"); logger != nullptr) {
+        logger->info("engine_send_input pointer_down id={} x={} y={}",
+                     event.pointer_id, event.x, event.y);
+      }
+      if (left_button) {
+        float xs[] = {x};
+        float ys[] = {y};
+        intptr_t ids[] = {kPrimaryTouchPointerId};
+        auto [_, inserted] = impl->active_pointer_ids.insert(kPrimaryTouchPointerId);
+        if (inserted) {
+          gl_view->handleTouchesBegin(1, ids, xs, ys);
+        } else {
+          gl_view->handleTouchesMove(1, ids, xs, ys);
+        }
+      }
+      DispatchMouseEvent(
+          dispatcher, gl_view, cocos2d::EventMouse::MouseEventType::MOUSE_DOWN,
+          x, y, event.button, 0.0f, 0.0f);
+      break;
+    }
+    case ENGINE_INPUT_EVENT_POINTER_MOVE: {
+      if (impl->active_pointer_ids.find(kPrimaryTouchPointerId) !=
+          impl->active_pointer_ids.end()) {
+        float xs[] = {x};
+        float ys[] = {y};
+        intptr_t ids[] = {kPrimaryTouchPointerId};
+        gl_view->handleTouchesMove(1, ids, xs, ys);
+      }
+      DispatchMouseEvent(
+          dispatcher, gl_view, cocos2d::EventMouse::MouseEventType::MOUSE_MOVE,
+          x, y, event.button, 0.0f, 0.0f);
+      break;
+    }
+    case ENGINE_INPUT_EVENT_POINTER_UP: {
+      if (auto logger = spdlog::get("core"); logger != nullptr) {
+        logger->info("engine_send_input pointer_up id={} x={} y={}",
+                     event.pointer_id, event.x, event.y);
+      }
+      if (left_button &&
+          impl->active_pointer_ids.erase(kPrimaryTouchPointerId) > 0) {
+        float xs[] = {x};
+        float ys[] = {y};
+        intptr_t ids[] = {kPrimaryTouchPointerId};
+        gl_view->handleTouchesEnd(1, ids, xs, ys);
+      }
+      DispatchMouseEvent(
+          dispatcher, gl_view, cocos2d::EventMouse::MouseEventType::MOUSE_UP, x,
+          y, event.button, 0.0f, 0.0f);
+      break;
+    }
+    case ENGINE_INPUT_EVENT_POINTER_SCROLL: {
+      DispatchMouseEvent(
+          dispatcher, gl_view,
+          cocos2d::EventMouse::MouseEventType::MOUSE_SCROLL, x, y,
+          event.button, static_cast<float>(event.delta_x),
+          static_cast<float>(event.delta_y));
+      break;
+    }
+    case ENGINE_INPUT_EVENT_KEY_DOWN:
+    case ENGINE_INPUT_EVENT_KEY_UP:
+    case ENGINE_INPUT_EVENT_TEXT_INPUT:
+    case ENGINE_INPUT_EVENT_BACK:
+      // Runtime keyboard/text input is currently handled by native window
+      // integration. Keep API acceptance for forward compatibility.
+      break;
+    default:
+      break;
+  }
+
+  if (out_error_message != nullptr) {
+    *out_error_message = nullptr;
+  }
+  return ENGINE_RESULT_OK;
+}
+
+void DisableNativeMouseCallbacks(cocos2d::GLView* gl_view) {
+  auto* desktop_view = dynamic_cast<cocos2d::GLViewImpl*>(gl_view);
+  if (desktop_view == nullptr) {
+    return;
+  }
+  GLFWwindow* glfw_window = desktop_view->getWindow();
+  if (glfw_window == nullptr) {
+    return;
+  }
+
+  glfwSetMouseButtonCallback(glfw_window, nullptr);
+  glfwSetCursorPosCallback(glfw_window, nullptr);
+  glfwSetScrollCallback(glfw_window, nullptr);
+}
+#endif
+
 }  // namespace
 
 extern "C" {
@@ -293,7 +471,7 @@ engine_result_t engine_create(const engine_create_desc_t* desc,
 
   auto handle = reinterpret_cast<engine_handle_t>(impl);
   {
-    std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+    std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
     g_live_handles.insert(handle);
   }
 
@@ -312,13 +490,13 @@ engine_result_t engine_destroy(engine_handle_t handle) {
   bool owned_runtime = false;
 
   {
-    std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+    std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
     auto result = ValidateHandleLocked(handle, &impl);
     if (result != ENGINE_RESULT_OK) {
       return result;
     }
 
-    std::lock_guard<std::mutex> guard(impl->mutex);
+    std::lock_guard<std::recursive_mutex> guard(impl->mutex);
     result = ValidateHandleThreadLocked(impl);
     if (result != ENGINE_RESULT_OK) {
       return result;
@@ -366,14 +544,14 @@ engine_result_t engine_open_game(engine_handle_t handle,
                                    "game_root_path_utf8 is null or empty");
   }
 
-  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
   engine_handle_s* impl = nullptr;
   auto result = ValidateHandleLocked(handle, &impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
   }
 
-  std::lock_guard<std::mutex> guard(impl->mutex);
+  std::lock_guard<std::recursive_mutex> guard(impl->mutex);
   result = ValidateHandleThreadLocked(impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
@@ -440,6 +618,17 @@ engine_result_t engine_open_game(engine_handle_t handle,
     scene->scheduleUpdate();
   }
 
+#if defined(TARGET_OS_MAC) && TARGET_OS_MAC && !TARGET_OS_IPHONE
+  if (!impl->native_mouse_callbacks_disabled) {
+    if (auto* director = cocos2d::Director::getInstance(); director != nullptr) {
+      if (auto* gl_view = director->getOpenGLView(); gl_view != nullptr) {
+        DisableNativeMouseCallbacks(gl_view);
+        impl->native_mouse_callbacks_disabled = true;
+      }
+    }
+  }
+#endif
+
   g_runtime_active = true;
   g_runtime_owner = handle;
   g_runtime_started_once = true;
@@ -450,6 +639,8 @@ engine_result_t engine_open_game(engine_handle_t handle,
   impl->frame_stride_bytes = 0;
   impl->frame_rgba.clear();
   impl->frame_ready = false;
+  impl->active_pointer_ids.clear();
+  impl->pending_input_events.clear();
   impl->state = ToStateValue(EngineState::kOpened);
   ClearHandleErrorLocked(impl);
   SetThreadError(nullptr);
@@ -459,14 +650,14 @@ engine_result_t engine_open_game(engine_handle_t handle,
 engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
   (void)delta_ms;
 
-  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
   engine_handle_s* impl = nullptr;
   auto result = ValidateHandleLocked(handle, &impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
   }
 
-  std::lock_guard<std::mutex> guard(impl->mutex);
+  std::lock_guard<std::recursive_mutex> guard(impl->mutex);
   result = ValidateHandleThreadLocked(impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
@@ -488,6 +679,22 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
     return SetHandleErrorAndReturnLocked(impl, ENGINE_RESULT_INVALID_STATE,
                                          "engine is not in opened state");
   }
+
+#if defined(TARGET_OS_MAC) && TARGET_OS_MAC && !TARGET_OS_IPHONE
+  while (!impl->pending_input_events.empty()) {
+    const engine_input_event_t queued_event = impl->pending_input_events.front();
+    impl->pending_input_events.pop_front();
+
+    const char* dispatch_error = nullptr;
+    const engine_result_t dispatch_result =
+        DispatchInputEventNow(impl, queued_event, &dispatch_error);
+    if (dispatch_result != ENGINE_RESULT_OK) {
+      return SetHandleErrorAndReturnLocked(
+          impl, dispatch_result,
+          dispatch_error != nullptr ? dispatch_error : "input dispatch failed");
+    }
+  }
+#endif
 
   if (TVPTerminated) {
     return SetHandleErrorAndReturnLocked(
@@ -538,14 +745,14 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
 }
 
 engine_result_t engine_pause(engine_handle_t handle) {
-  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
   engine_handle_s* impl = nullptr;
   auto result = ValidateHandleLocked(handle, &impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
   }
 
-  std::lock_guard<std::mutex> guard(impl->mutex);
+  std::lock_guard<std::recursive_mutex> guard(impl->mutex);
   result = ValidateHandleThreadLocked(impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
@@ -570,6 +777,8 @@ engine_result_t engine_pause(engine_handle_t handle) {
   }
 
   Application->OnDeactivate();
+  impl->active_pointer_ids.clear();
+  impl->pending_input_events.clear();
   impl->state = ToStateValue(EngineState::kPaused);
   ClearHandleErrorLocked(impl);
   SetThreadError(nullptr);
@@ -577,14 +786,14 @@ engine_result_t engine_pause(engine_handle_t handle) {
 }
 
 engine_result_t engine_resume(engine_handle_t handle) {
-  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
   engine_handle_s* impl = nullptr;
   auto result = ValidateHandleLocked(handle, &impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
   }
 
-  std::lock_guard<std::mutex> guard(impl->mutex);
+  std::lock_guard<std::recursive_mutex> guard(impl->mutex);
   result = ValidateHandleThreadLocked(impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
@@ -626,14 +835,14 @@ engine_result_t engine_set_option(engine_handle_t handle,
                                    "option->value_utf8 must be non-null");
   }
 
-  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
   engine_handle_s* impl = nullptr;
   auto result = ValidateHandleLocked(handle, &impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
   }
 
-  std::lock_guard<std::mutex> guard(impl->mutex);
+  std::lock_guard<std::recursive_mutex> guard(impl->mutex);
   result = ValidateHandleThreadLocked(impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
@@ -654,14 +863,14 @@ engine_result_t engine_set_surface_size(engine_handle_t handle,
                                    "width and height must be > 0");
   }
 
-  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
   engine_handle_s* impl = nullptr;
   auto result = ValidateHandleLocked(handle, &impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
   }
 
-  std::lock_guard<std::mutex> guard(impl->mutex);
+  std::lock_guard<std::recursive_mutex> guard(impl->mutex);
   result = ValidateHandleThreadLocked(impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
@@ -696,14 +905,14 @@ engine_result_t engine_get_frame_desc(engine_handle_t handle,
         "engine_frame_desc_t.struct_size is too small");
   }
 
-  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
   engine_handle_s* impl = nullptr;
   auto result = ValidateHandleLocked(handle, &impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
   }
 
-  std::lock_guard<std::mutex> guard(impl->mutex);
+  std::lock_guard<std::recursive_mutex> guard(impl->mutex);
   result = ValidateHandleThreadLocked(impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
@@ -745,14 +954,14 @@ engine_result_t engine_read_frame_rgba(engine_handle_t handle,
                                    "out_pixels is null");
   }
 
-  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
   engine_handle_s* impl = nullptr;
   auto result = ValidateHandleLocked(handle, &impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
   }
 
-  std::lock_guard<std::mutex> guard(impl->mutex);
+  std::lock_guard<std::recursive_mutex> guard(impl->mutex);
   result = ValidateHandleThreadLocked(impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
@@ -812,14 +1021,14 @@ engine_result_t engine_get_host_native_window(engine_handle_t handle,
   }
   *out_window_handle = nullptr;
 
-  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
   engine_handle_s* impl = nullptr;
   auto result = ValidateHandleLocked(handle, &impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
   }
 
-  std::lock_guard<std::mutex> guard(impl->mutex);
+  std::lock_guard<std::recursive_mutex> guard(impl->mutex);
   result = ValidateHandleThreadLocked(impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
@@ -875,14 +1084,14 @@ engine_result_t engine_get_host_native_view(engine_handle_t handle,
   }
   *out_view_handle = nullptr;
 
-  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
   engine_handle_s* impl = nullptr;
   auto result = ValidateHandleLocked(handle, &impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
   }
 
-  std::lock_guard<std::mutex> guard(impl->mutex);
+  std::lock_guard<std::recursive_mutex> guard(impl->mutex);
   result = ValidateHandleThreadLocked(impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
@@ -965,14 +1174,14 @@ engine_result_t engine_send_input(engine_handle_t handle,
         "engine_input_event_t.struct_size is too small");
   }
 
-  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
   engine_handle_s* impl = nullptr;
   auto result = ValidateHandleLocked(handle, &impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
   }
 
-  std::lock_guard<std::mutex> guard(impl->mutex);
+  std::lock_guard<std::recursive_mutex> guard(impl->mutex);
   result = ValidateHandleThreadLocked(impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
@@ -1004,6 +1213,27 @@ engine_result_t engine_send_input(engine_handle_t handle,
                                            "unsupported input event type");
   }
 
+#if defined(TARGET_OS_MAC) && TARGET_OS_MAC && !TARGET_OS_IPHONE
+  if (event->type == ENGINE_INPUT_EVENT_POINTER_DOWN ||
+      event->type == ENGINE_INPUT_EVENT_POINTER_MOVE ||
+      event->type == ENGINE_INPUT_EVENT_POINTER_UP ||
+      event->type == ENGINE_INPUT_EVENT_POINTER_SCROLL) {
+    if (!IsFinitePointerValue(event->x) || !IsFinitePointerValue(event->y) ||
+        !IsFinitePointerValue(event->delta_x) ||
+        !IsFinitePointerValue(event->delta_y)) {
+      return SetHandleErrorAndReturnLocked(
+          impl, ENGINE_RESULT_INVALID_ARGUMENT,
+          "pointer coordinates contain non-finite values");
+    }
+  }
+
+  impl->pending_input_events.push_back(*event);
+  constexpr size_t kMaxQueuedInputs = 512;
+  if (impl->pending_input_events.size() > kMaxQueuedInputs) {
+    impl->pending_input_events.pop_front();
+  }
+#endif
+
   ClearHandleErrorLocked(impl);
   SetThreadError(nullptr);
   return ENGINE_RESULT_OK;
@@ -1014,13 +1244,13 @@ const char* engine_get_last_error(engine_handle_t handle) {
     return g_thread_error.c_str();
   }
 
-  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
   if (!IsHandleLiveLocked(handle)) {
     SetThreadError("engine handle is invalid or already destroyed");
     return g_thread_error.c_str();
   }
   auto* impl = reinterpret_cast<engine_handle_s*>(handle);
-  std::lock_guard<std::mutex> guard(impl->mutex);
+  std::lock_guard<std::recursive_mutex> guard(impl->mutex);
   return impl->last_error.c_str();
 }
 
@@ -1035,7 +1265,7 @@ const char* engine_get_last_error(engine_handle_t handle) {
 #include <mutex>
 
 struct engine_handle_s {
-  std::mutex mutex;
+  std::recursive_mutex mutex;
   std::string last_error;
   int state = 0;
   uint32_t surface_width = 1280;
@@ -1056,7 +1286,7 @@ inline int ToStateValue(EngineState state) {
   return static_cast<int>(state);
 }
 
-std::mutex g_registry_mutex;
+std::recursive_mutex g_registry_mutex;
 std::unordered_set<engine_handle_t> g_live_handles;
 thread_local std::string g_thread_error;
 
@@ -1135,7 +1365,7 @@ engine_result_t engine_create(const engine_create_desc_t* desc,
 
   auto handle = reinterpret_cast<engine_handle_t>(impl);
   {
-    std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+    std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
     g_live_handles.insert(handle);
   }
 
@@ -1152,7 +1382,7 @@ engine_result_t engine_destroy(engine_handle_t handle) {
 
   engine_handle_s* impl = nullptr;
   {
-    std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+    std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
     auto it = g_live_handles.find(handle);
     if (it == g_live_handles.end()) {
       return SetThreadErrorAndReturn(ENGINE_RESULT_INVALID_ARGUMENT,
@@ -1163,7 +1393,7 @@ engine_result_t engine_destroy(engine_handle_t handle) {
   }
 
   {
-    std::lock_guard<std::mutex> guard(impl->mutex);
+    std::lock_guard<std::recursive_mutex> guard(impl->mutex);
     impl->state = ToStateValue(EngineState::kDestroyed);
     impl->last_error.clear();
   }
@@ -1182,14 +1412,14 @@ engine_result_t engine_open_game(engine_handle_t handle,
                                    "game_root_path_utf8 is null or empty");
   }
 
-  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
   engine_handle_s* impl = nullptr;
   auto result = ValidateHandleLocked(handle, &impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
   }
 
-  std::lock_guard<std::mutex> guard(impl->mutex);
+  std::lock_guard<std::recursive_mutex> guard(impl->mutex);
   if (impl->state == ToStateValue(EngineState::kDestroyed)) {
     SetHandleErrorLocked(impl, "engine is already destroyed");
     return ENGINE_RESULT_INVALID_STATE;
@@ -1204,14 +1434,14 @@ engine_result_t engine_open_game(engine_handle_t handle,
 engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
   (void)delta_ms;
 
-  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
   engine_handle_s* impl = nullptr;
   auto result = ValidateHandleLocked(handle, &impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
   }
 
-  std::lock_guard<std::mutex> guard(impl->mutex);
+  std::lock_guard<std::recursive_mutex> guard(impl->mutex);
   if (impl->state == ToStateValue(EngineState::kPaused)) {
     SetHandleErrorLocked(impl, "engine is paused");
     return ENGINE_RESULT_INVALID_STATE;
@@ -1228,14 +1458,14 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
 }
 
 engine_result_t engine_pause(engine_handle_t handle) {
-  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
   engine_handle_s* impl = nullptr;
   auto result = ValidateHandleLocked(handle, &impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
   }
 
-  std::lock_guard<std::mutex> guard(impl->mutex);
+  std::lock_guard<std::recursive_mutex> guard(impl->mutex);
   if (impl->state == ToStateValue(EngineState::kPaused)) {
     impl->last_error.clear();
     SetThreadError(nullptr);
@@ -1253,14 +1483,14 @@ engine_result_t engine_pause(engine_handle_t handle) {
 }
 
 engine_result_t engine_resume(engine_handle_t handle) {
-  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
   engine_handle_s* impl = nullptr;
   auto result = ValidateHandleLocked(handle, &impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
   }
 
-  std::lock_guard<std::mutex> guard(impl->mutex);
+  std::lock_guard<std::recursive_mutex> guard(impl->mutex);
   if (impl->state == ToStateValue(EngineState::kOpened)) {
     impl->last_error.clear();
     SetThreadError(nullptr);
@@ -1288,14 +1518,14 @@ engine_result_t engine_set_option(engine_handle_t handle,
                                    "option->value_utf8 must be non-null");
   }
 
-  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
   engine_handle_s* impl = nullptr;
   auto result = ValidateHandleLocked(handle, &impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
   }
 
-  std::lock_guard<std::mutex> guard(impl->mutex);
+  std::lock_guard<std::recursive_mutex> guard(impl->mutex);
   if (impl->state == ToStateValue(EngineState::kDestroyed)) {
     SetHandleErrorLocked(impl, "engine is already destroyed");
     return ENGINE_RESULT_INVALID_STATE;
@@ -1314,14 +1544,14 @@ engine_result_t engine_set_surface_size(engine_handle_t handle,
                                    "width and height must be > 0");
   }
 
-  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
   engine_handle_s* impl = nullptr;
   auto result = ValidateHandleLocked(handle, &impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
   }
 
-  std::lock_guard<std::mutex> guard(impl->mutex);
+  std::lock_guard<std::recursive_mutex> guard(impl->mutex);
   if (impl->state == ToStateValue(EngineState::kDestroyed)) {
     SetHandleErrorLocked(impl, "engine is already destroyed");
     return ENGINE_RESULT_INVALID_STATE;
@@ -1346,14 +1576,14 @@ engine_result_t engine_get_frame_desc(engine_handle_t handle,
         "engine_frame_desc_t.struct_size is too small");
   }
 
-  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
   engine_handle_s* impl = nullptr;
   auto result = ValidateHandleLocked(handle, &impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
   }
 
-  std::lock_guard<std::mutex> guard(impl->mutex);
+  std::lock_guard<std::recursive_mutex> guard(impl->mutex);
   if (impl->state == ToStateValue(EngineState::kDestroyed)) {
     SetHandleErrorLocked(impl, "engine is already destroyed");
     return ENGINE_RESULT_INVALID_STATE;
@@ -1380,14 +1610,14 @@ engine_result_t engine_read_frame_rgba(engine_handle_t handle,
                                    "out_pixels is null");
   }
 
-  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
   engine_handle_s* impl = nullptr;
   auto result = ValidateHandleLocked(handle, &impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
   }
 
-  std::lock_guard<std::mutex> guard(impl->mutex);
+  std::lock_guard<std::recursive_mutex> guard(impl->mutex);
   if (impl->state != ToStateValue(EngineState::kOpened) &&
       impl->state != ToStateValue(EngineState::kPaused)) {
     SetHandleErrorLocked(impl,
@@ -1419,14 +1649,14 @@ engine_result_t engine_get_host_native_window(engine_handle_t handle,
   }
   *out_window_handle = nullptr;
 
-  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
   engine_handle_s* impl = nullptr;
   auto result = ValidateHandleLocked(handle, &impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
   }
 
-  std::lock_guard<std::mutex> guard(impl->mutex);
+  std::lock_guard<std::recursive_mutex> guard(impl->mutex);
   if (impl->state != ToStateValue(EngineState::kOpened) &&
       impl->state != ToStateValue(EngineState::kPaused)) {
     SetHandleErrorLocked(
@@ -1448,14 +1678,14 @@ engine_result_t engine_get_host_native_view(engine_handle_t handle,
   }
   *out_view_handle = nullptr;
 
-  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
   engine_handle_s* impl = nullptr;
   auto result = ValidateHandleLocked(handle, &impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
   }
 
-  std::lock_guard<std::mutex> guard(impl->mutex);
+  std::lock_guard<std::recursive_mutex> guard(impl->mutex);
   if (impl->state != ToStateValue(EngineState::kOpened) &&
       impl->state != ToStateValue(EngineState::kPaused)) {
     SetHandleErrorLocked(
@@ -1480,14 +1710,14 @@ engine_result_t engine_send_input(engine_handle_t handle,
         "engine_input_event_t.struct_size is too small");
   }
 
-  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
   engine_handle_s* impl = nullptr;
   auto result = ValidateHandleLocked(handle, &impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
   }
 
-  std::lock_guard<std::mutex> guard(impl->mutex);
+  std::lock_guard<std::recursive_mutex> guard(impl->mutex);
   if (impl->state == ToStateValue(EngineState::kPaused)) {
     SetHandleErrorLocked(impl, "engine is paused");
     return ENGINE_RESULT_INVALID_STATE;
@@ -1523,13 +1753,13 @@ const char* engine_get_last_error(engine_handle_t handle) {
     return g_thread_error.c_str();
   }
 
-  std::lock_guard<std::mutex> registry_guard(g_registry_mutex);
+  std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
   if (!IsHandleLiveLocked(handle)) {
     SetThreadError("engine handle is invalid or already destroyed");
     return g_thread_error.c_str();
   }
   auto* impl = reinterpret_cast<engine_handle_s*>(handle);
-  std::lock_guard<std::mutex> guard(impl->mutex);
+  std::lock_guard<std::recursive_mutex> guard(impl->mutex);
   return impl->last_error.c_str();
 }
 

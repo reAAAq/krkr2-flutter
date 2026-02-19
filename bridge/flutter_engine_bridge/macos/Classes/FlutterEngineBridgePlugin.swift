@@ -93,8 +93,15 @@ private final class EngineHostTexture: NSObject, FlutterTexture {
 }
 
 private final class EngineNativeSurfaceView: NSView {
+  private static let inputPointerDown = 1
+  private static let inputPointerMove = 2
+  private static let inputPointerUp = 3
+  private static let inputPointerScroll = 4
+
   private let viewId: Int64
   private let onDispose: (Int64) -> Void
+  private let onPointerEvent: (Int64, [String: Any]) -> Void
+  private let inputOverlayView = NSView(frame: .zero)
   private var nativeView: NSView?
   private weak var nativeViewOwnerWindow: NSWindow?
   private var nativeViewWindowPlaceholder: NSView?
@@ -108,13 +115,29 @@ private final class EngineNativeSurfaceView: NSView {
   private var clipViewObserver: NSObjectProtocol?
   private weak var observedClipView: NSClipView?
   private var frameSyncScheduled = false
+  private var ownerWindowFrameSyncScheduled = false
 
-  init(viewId: Int64, onDispose: @escaping (Int64) -> Void) {
+  init(
+    viewId: Int64,
+    onDispose: @escaping (Int64) -> Void,
+    onPointerEvent: @escaping (Int64, [String: Any]) -> Void
+  ) {
     self.viewId = viewId
     self.onDispose = onDispose
+    self.onPointerEvent = onPointerEvent
     super.init(frame: .zero)
     wantsLayer = true
     layer?.backgroundColor = NSColor.black.cgColor
+    inputOverlayView.translatesAutoresizingMaskIntoConstraints = false
+    inputOverlayView.wantsLayer = true
+    inputOverlayView.layer?.backgroundColor = NSColor.clear.cgColor
+    addSubview(inputOverlayView)
+    NSLayoutConstraint.activate([
+      inputOverlayView.leadingAnchor.constraint(equalTo: leadingAnchor),
+      inputOverlayView.trailingAnchor.constraint(equalTo: trailingAnchor),
+      inputOverlayView.topAnchor.constraint(equalTo: topAnchor),
+      inputOverlayView.bottomAnchor.constraint(equalTo: bottomAnchor),
+    ])
   }
 
   @available(*, unavailable)
@@ -142,18 +165,76 @@ private final class EngineNativeSurfaceView: NSView {
     updateClipViewObserver()
     attachToHostWindowIfPossible()
     updateNativeWindowFrame()
+    updateOwnerWindowFrame()
   }
 
   override func viewDidMoveToSuperview() {
     super.viewDidMoveToSuperview()
     updateClipViewObserver()
     scheduleNativeWindowFrameUpdate()
+    scheduleOwnerWindowFrameUpdate()
   }
 
   override func layout() {
     super.layout()
     updateClipViewObserver()
     scheduleNativeWindowFrameUpdate()
+    scheduleOwnerWindowFrameUpdate()
+  }
+
+  override func hitTest(_ point: NSPoint) -> NSView? {
+    if bounds.contains(point) {
+      return self
+    }
+    return super.hitTest(point)
+  }
+
+  override var acceptsFirstResponder: Bool {
+    return true
+  }
+
+  override var isFlipped: Bool {
+    return true
+  }
+
+  override func mouseDown(with event: NSEvent) {
+    emitPointerEvent(type: Self.inputPointerDown, event: event, fallbackMask: 1)
+  }
+
+  override func mouseDragged(with event: NSEvent) {
+    emitPointerEvent(type: Self.inputPointerMove, event: event)
+  }
+
+  override func mouseUp(with event: NSEvent) {
+    emitPointerEvent(type: Self.inputPointerUp, event: event, fallbackMask: 1)
+  }
+
+  override func rightMouseDown(with event: NSEvent) {
+    emitPointerEvent(type: Self.inputPointerDown, event: event, fallbackMask: 2)
+  }
+
+  override func rightMouseDragged(with event: NSEvent) {
+    emitPointerEvent(type: Self.inputPointerMove, event: event)
+  }
+
+  override func rightMouseUp(with event: NSEvent) {
+    emitPointerEvent(type: Self.inputPointerUp, event: event, fallbackMask: 2)
+  }
+
+  override func otherMouseDown(with event: NSEvent) {
+    emitPointerEvent(type: Self.inputPointerDown, event: event, fallbackMask: 4)
+  }
+
+  override func otherMouseDragged(with event: NSEvent) {
+    emitPointerEvent(type: Self.inputPointerMove, event: event)
+  }
+
+  override func otherMouseUp(with event: NSEvent) {
+    emitPointerEvent(type: Self.inputPointerUp, event: event, fallbackMask: 4)
+  }
+
+  override func scrollWheel(with event: NSEvent) {
+    emitPointerEvent(type: Self.inputPointerScroll, event: event)
   }
 
   func attachNativeView(_ view: NSView, nativeWindow window: NSWindow?) {
@@ -192,6 +273,7 @@ private final class EngineNativeSurfaceView: NSView {
     targetView.removeFromSuperview()
     targetView.translatesAutoresizingMaskIntoConstraints = false
     addSubview(targetView)
+    addSubview(inputOverlayView, positioned: .above, relativeTo: targetView)
 
     nativeViewPinnedConstraints = [
       targetView.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -201,6 +283,7 @@ private final class EngineNativeSurfaceView: NSView {
     ]
     NSLayoutConstraint.activate(nativeViewPinnedConstraints)
     needsLayout = true
+    updateOwnerWindowFrame()
   }
 
   func detachNativeView() {
@@ -237,42 +320,17 @@ private final class EngineNativeSurfaceView: NSView {
     nativeViewOriginalSuperview = nil
     nativeViewOriginalFrame = .zero
     nativeViewOriginalAutoresizingMask = []
+    ownerWindowFrameSyncScheduled = false
   }
 
   private func resolvePreferredNativeAttachView(
     sourceView: NSView,
     ownerWindow: NSWindow?
   ) -> NSView {
-    guard ownerWindow?.contentView === sourceView else {
-      return sourceView
-    }
-
-    // Prefer the deepest single-child chain only when each child nearly fills
-    // its parent. This avoids selecting inset/letterboxed children that would
-    // produce top/bottom black bars after reparenting.
-    var candidate = sourceView
-    for _ in 0..<6 {
-      guard candidate.subviews.count == 1, let child = candidate.subviews.first
-      else {
-        break
-      }
-      let parentBounds = candidate.bounds
-      let childFrame = child.frame
-      let hasValidParentSize = parentBounds.width > 1 && parentBounds.height > 1
-      guard hasValidParentSize else {
-        break
-      }
-      let widthFill = childFrame.width / parentBounds.width
-      let heightFill = childFrame.height / parentBounds.height
-      let nearlyFillsParent =
-        widthFill >= 0.97 && widthFill <= 1.03 &&
-        heightFill >= 0.97 && heightFill <= 1.03
-      guard nearlyFillsParent else {
-        break
-      }
-      candidate = child
-    }
-    return candidate
+    _ = ownerWindow
+    // Keep responder chain stable by attaching the exact view pointer from
+    // engine_api. Aggressive child-view descent can break input dispatch.
+    return sourceView
   }
 
   func attachNativeWindow(_ window: NSWindow) {
@@ -338,6 +396,23 @@ private final class EngineNativeSurfaceView: NSView {
     }
   }
 
+  private func scheduleOwnerWindowFrameUpdate() {
+    guard nativeView != nil, nativeViewOwnerWindow != nil else {
+      return
+    }
+    guard !ownerWindowFrameSyncScheduled else {
+      return
+    }
+    ownerWindowFrameSyncScheduled = true
+    DispatchQueue.main.async { [weak self] in
+      guard let self else {
+        return
+      }
+      self.ownerWindowFrameSyncScheduled = false
+      self.updateOwnerWindowFrame()
+    }
+  }
+
   private func updateNativeWindowFrame() {
     guard let hostWindow = window, let nativeWindow else {
       return
@@ -349,6 +424,20 @@ private final class EngineNativeSurfaceView: NSView {
       return
     }
     nativeWindow.setFrame(rectOnScreen, display: true, animate: false)
+  }
+
+  private func updateOwnerWindowFrame() {
+    guard let hostWindow = window, let ownerWindow = nativeViewOwnerWindow,
+      nativeView != nil
+    else {
+      return
+    }
+    let rectInWindow = convert(bounds, to: nil)
+    let rectOnScreen = hostWindow.convertToScreen(rectInWindow).integral
+    if ownerWindow.frame.equalTo(rectOnScreen) {
+      return
+    }
+    ownerWindow.setFrame(rectOnScreen, display: false, animate: false)
   }
 
   private func configureNativeWindow(_ window: NSWindow) {
@@ -365,7 +454,9 @@ private final class EngineNativeSurfaceView: NSView {
 
   private func installHostObservers() {
     removeHostObservers()
-    guard nativeWindow != nil, let hostWindow = window else {
+    guard let hostWindow = window,
+      nativeWindow != nil || nativeViewOwnerWindow != nil
+    else {
       return
     }
     let center = NotificationCenter.default
@@ -380,6 +471,7 @@ private final class EngineNativeSurfaceView: NSView {
       center.addObserver(forName: name, object: hostWindow, queue: .main) {
         [weak self] _ in
         self?.scheduleNativeWindowFrameUpdate()
+        self?.scheduleOwnerWindowFrameUpdate()
       }
     }
   }
@@ -393,7 +485,7 @@ private final class EngineNativeSurfaceView: NSView {
   }
 
   private func updateClipViewObserver() {
-    guard nativeWindow != nil else {
+    guard nativeWindow != nil || nativeViewOwnerWindow != nil else {
       removeClipViewObserver()
       return
     }
@@ -413,6 +505,7 @@ private final class EngineNativeSurfaceView: NSView {
       queue: .main
     ) { [weak self] _ in
       self?.scheduleNativeWindowFrameUpdate()
+      self?.scheduleOwnerWindowFrameUpdate()
     }
   }
 
@@ -423,19 +516,70 @@ private final class EngineNativeSurfaceView: NSView {
     }
     observedClipView = nil
   }
+
+  private func emitPointerEvent(type: Int, event: NSEvent, fallbackMask: Int32 = 0) {
+    guard bounds.width > 0, bounds.height > 0 else {
+      return
+    }
+    let localPoint = convert(event.locationInWindow, from: nil)
+    let backingScale = window?.backingScaleFactor ?? 1.0
+    let timestampMicros = Int64(event.timestamp * 1_000_000.0)
+    let buttonMask = resolveButtonMask(event: event, fallbackMask: fallbackMask)
+
+    let payload: [String: Any] = [
+      "type": NSNumber(value: type),
+      "timestampMicros": NSNumber(value: timestampMicros),
+      "x": NSNumber(value: Double(localPoint.x) * backingScale),
+      "y": NSNumber(value: Double(localPoint.y) * backingScale),
+      "deltaX": NSNumber(value: Double(event.deltaX) * backingScale),
+      "deltaY": NSNumber(value: Double(event.deltaY) * backingScale),
+      "pointerId": NSNumber(value: 0),
+      "button": NSNumber(value: Int(buttonMask)),
+    ]
+    // Avoid AppKit input callback reentrancy by posting to the next runloop turn.
+    DispatchQueue.main.async { [weak self] in
+      guard let self else {
+        return
+      }
+      self.onPointerEvent(self.viewId, payload)
+    }
+  }
+
+  private func resolveButtonMask(event: NSEvent, fallbackMask: Int32) -> Int32 {
+    let pressedMask = Int32(NSEvent.pressedMouseButtons & 0x7)
+    if pressedMask != 0 {
+      return pressedMask
+    }
+    if fallbackMask != 0 {
+      return fallbackMask
+    }
+    switch event.buttonNumber {
+    case 0:
+      return 1
+    case 1:
+      return 2
+    case 2:
+      return 4
+    default:
+      return 0
+    }
+  }
 }
 
 private final class EngineNativeSurfaceFactory: NSObject, FlutterPlatformViewFactory
 {
   private let onCreate: (Int64, EngineNativeSurfaceView) -> Void
   private let onDispose: (Int64) -> Void
+  private let onPointerEvent: (Int64, [String: Any]) -> Void
 
   init(
     onCreate: @escaping (Int64, EngineNativeSurfaceView) -> Void,
-    onDispose: @escaping (Int64) -> Void
+    onDispose: @escaping (Int64) -> Void,
+    onPointerEvent: @escaping (Int64, [String: Any]) -> Void
   ) {
     self.onCreate = onCreate
     self.onDispose = onDispose
+    self.onPointerEvent = onPointerEvent
     super.init()
   }
 
@@ -449,7 +593,8 @@ private final class EngineNativeSurfaceFactory: NSObject, FlutterPlatformViewFac
   ) -> NSView {
     let nativeSurfaceView = EngineNativeSurfaceView(
       viewId: viewId,
-      onDispose: onDispose
+      onDispose: onDispose,
+      onPointerEvent: onPointerEvent
     )
     onCreate(viewId, nativeSurfaceView)
     return nativeSurfaceView
@@ -464,6 +609,7 @@ public class FlutterEngineBridgePlugin: NSObject, FlutterPlugin {
   private var textures: [Int64: EngineHostTexture] = [:]
   private var nativeSurfaceViews: [Int64: EngineNativeSurfaceView] = [:]
   private var nativeSurfaceFactory: EngineNativeSurfaceFactory?
+  private var pendingNativePointerEvents: [Int64: [[String: Any]]] = [:]
 
   init(registrar: FlutterPluginRegistrar) {
     self.registrar = registrar
@@ -498,10 +644,29 @@ public class FlutterEngineBridgePlugin: NSObject, FlutterPlugin {
       },
       onDispose: { [weak self] viewId in
         self?.nativeSurfaceViews.removeValue(forKey: viewId)
+        self?.pendingNativePointerEvents.removeValue(forKey: viewId)
+      },
+      onPointerEvent: { [weak self] viewId, payload in
+        self?.enqueueNativePointerEvent(viewId: viewId, payload: payload)
       }
     )
     nativeSurfaceFactory = factory
     registrar.register(factory, withId: Self.nativeSurfaceViewType)
+  }
+
+  private func enqueueNativePointerEvent(viewId: Int64, payload: [String: Any]) {
+    var queue = pendingNativePointerEvents[viewId] ?? []
+    queue.append(payload)
+    if queue.count > 1024 {
+      queue.removeFirst(queue.count - 1024)
+    }
+    pendingNativePointerEvents[viewId] = queue
+  }
+
+  private func drainNativePointerEvents(viewId: Int64) -> [[String: Any]] {
+    let queue = pendingNativePointerEvents[viewId] ?? []
+    pendingNativePointerEvents[viewId] = []
+    return queue
   }
 
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -749,6 +914,22 @@ public class FlutterEngineBridgePlugin: NSObject, FlutterPlugin {
       }
       nativeSurfaceView.detachNativeWindow()
       result(nil)
+
+    case "drainNativePointerEvents":
+      guard let args = call.arguments as? [String: Any],
+        let viewIdNumber = args["viewId"] as? NSNumber
+      else {
+        result(
+          FlutterError(
+            code: "invalid_args",
+            message: "drainNativePointerEvents requires viewId",
+            details: nil
+          )
+        )
+        return
+      }
+      let viewId = viewIdNumber.int64Value
+      result(drainNativePointerEvents(viewId: viewId))
 
     default:
       result(FlutterMethodNotImplemented)
