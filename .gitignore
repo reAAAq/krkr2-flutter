@@ -12,6 +12,8 @@
 .gradle/
 .act/
 .devtools/flutter/
+*.md
+*.lock
 
 local.properties
 
