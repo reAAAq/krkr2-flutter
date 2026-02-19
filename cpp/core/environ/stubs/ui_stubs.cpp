@@ -184,6 +184,9 @@ public:
         // Draw fullscreen quad
         glUseProgram(blit_program_);
         glUniform1i(blit_tex_uniform_, 0);
+        // In IOSurface mode, the surface has a top-down coordinate system
+        // while OpenGL renders bottom-up, so we need to flip Y.
+        glUniform1f(blit_flipy_uniform_, egl.HasIOSurface() ? 1.0f : 0.0f);
 
         glBindBuffer(GL_ARRAY_BUFFER, blit_vbo_);
         glEnableVertexAttribArray(0);
@@ -264,14 +267,15 @@ private:
     void EnsureBlitResources() {
         if (blit_program_ != 0) return;
 
-        // Vertex shader: fullscreen quad with flipped Y (OpenGL → top-down)
+        // Vertex shader: fullscreen quad with optional Y flip
         const char* vs_src = R"(#version 300 es
             layout(location = 0) in vec2 aPos;
             layout(location = 1) in vec2 aUV;
+            uniform float uFlipY;
             out vec2 vUV;
             void main() {
                 gl_Position = vec4(aPos, 0.0, 1.0);
-                vUV = aUV;
+                vUV = vec2(aUV.x, mix(aUV.y, 1.0 - aUV.y, uFlipY));
             }
         )";
 
@@ -319,6 +323,7 @@ private:
         glDeleteShader(fs);
 
         blit_tex_uniform_ = glGetUniformLocation(blit_program_, "uTex");
+        blit_flipy_uniform_ = glGetUniformLocation(blit_program_, "uFlipY");
 
         // Fullscreen quad: position (x,y) + texcoord (u,v)
         // Y-flipped: top-left of texture → top-left of screen
@@ -363,6 +368,7 @@ private:
     GLuint blit_vbo_ = 0;
     GLuint blit_texture_ = 0;
     GLint  blit_tex_uniform_ = -1;
+    GLint  blit_flipy_uniform_ = -1;
     std::vector<uint8_t> blit_pixel_buf_;
 };
 
