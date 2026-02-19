@@ -10,6 +10,7 @@ set(ENVIRON_SOURCE_FILES
     ${ENVIRON_PATH}/Application.cpp
     ${ENVIRON_PATH}/DetectCPU.cpp
     ${ENVIRON_PATH}/DumpSend.cpp
+    ${ENVIRON_PATH}/EngineBootstrap.cpp
     ${ENVIRON_PATH}/XP3ArchiveRepack.cpp
 
     $<$<BOOL:${ANDROID}>:${ENVIRON_PATH}/android/AndroidUtils.cpp>
