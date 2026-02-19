@@ -21,9 +21,173 @@
 #include "WindowIntf.h"
 #include "MenuItemIntf.h"
 #include "Platform.h"
+#include "TVPWindow.h"
+#include "Application.h"
+#include "krkr_egl_context.h"
 
-// Forward declarations
-class iWindowLayer;
+// ---------------------------------------------------------------------------
+// FlutterWindowLayer — concrete iWindowLayer for Flutter host mode.
+// Provides a logical window backed by the ANGLE EGL Pbuffer surface.
+// Rendering output goes through glReadPixels in the engine_api layer.
+// ---------------------------------------------------------------------------
+class FlutterWindowLayer : public iWindowLayer {
+public:
+    explicit FlutterWindowLayer(tTJSNI_Window *owner)
+        : owner_(owner), visible_(true), caption_("krkr2"),
+          width_(0), height_(0), active_(true), closing_(false) {
+        // Get initial size from EGL context
+        auto& egl = krkr::GetEngineEGLContext();
+        if (egl.IsValid()) {
+            width_  = static_cast<tjs_int>(egl.GetWidth());
+            height_ = static_cast<tjs_int>(egl.GetHeight());
+        } else {
+            width_  = 1280;
+            height_ = 720;
+        }
+        spdlog::info("FlutterWindowLayer created: {}x{}", width_, height_);
+    }
+
+    ~FlutterWindowLayer() {
+        spdlog::debug("FlutterWindowLayer destroyed");
+    }
+
+    // -- Pure virtual implementations --
+
+    void SetPaintBoxSize(tjs_int w, tjs_int h) override {
+        // Paint box size is managed by the EGL surface; no-op here
+    }
+
+    bool GetFormEnabled() override { return !closing_; }
+
+    void SetDefaultMouseCursor() override {}
+
+    void GetCursorPos(tjs_int &x, tjs_int &y) override {
+        x = 0; y = 0;
+    }
+
+    void SetCursorPos(tjs_int x, tjs_int y) override {}
+
+    void SetHintText(const ttstr &text) override {}
+
+    void SetAttentionPoint(tjs_int left, tjs_int top,
+                           const struct tTVPFont *font) override {}
+
+    void ZoomRectangle(tjs_int &left, tjs_int &top, tjs_int &right,
+                       tjs_int &bottom) override {
+        // No zoom transformation — coordinates pass through 1:1
+    }
+
+    void BringToFront() override {}
+
+    void ShowWindowAsModal() override {
+        spdlog::warn("FlutterWindowLayer::ShowWindowAsModal: stub");
+    }
+
+    bool GetVisible() override { return visible_; }
+
+    void SetVisible(bool bVisible) override { visible_ = bVisible; }
+
+    const char *GetCaption() override { return caption_.c_str(); }
+
+    void SetCaption(const std::string &cap) override { caption_ = cap; }
+
+    void SetWidth(tjs_int w) override { width_ = w; }
+
+    void SetHeight(tjs_int h) override { height_ = h; }
+
+    void SetSize(tjs_int w, tjs_int h) override {
+        width_ = w;
+        height_ = h;
+    }
+
+    void GetSize(tjs_int &w, tjs_int &h) override {
+        w = width_;
+        h = height_;
+    }
+
+    [[nodiscard]] tjs_int GetWidth() const override { return width_; }
+
+    [[nodiscard]] tjs_int GetHeight() const override { return height_; }
+
+    void GetWinSize(tjs_int &w, tjs_int &h) override {
+        w = width_;
+        h = height_;
+    }
+
+    void SetZoom(tjs_int numer, tjs_int denom) override {
+        ZoomNumer = numer;
+        ZoomDenom = denom;
+    }
+
+    void UpdateDrawBuffer(iTVPTexture2D *tex) override {
+        // In Flutter mode, frame readback is done via engine_read_frame_rgba.
+        // This method is called by BasicDrawDevice after compositing.
+        // No additional work needed here — the framebuffer is already
+        // rendered in the EGL Pbuffer and will be read by the host.
+    }
+
+    void InvalidateClose() override {
+        closing_ = true;
+    }
+
+    bool GetWindowActive() override { return active_; }
+
+    void Close() override {
+        closing_ = true;
+        spdlog::debug("FlutterWindowLayer::Close called");
+    }
+
+    void OnCloseQueryCalled(bool b) override {}
+
+    void InternalKeyDown(tjs_uint16 key, tjs_uint32 shift) override {}
+
+    void OnKeyUp(tjs_uint16 vk, int shift) override {}
+
+    void OnKeyPress(tjs_uint16 vk, int repeat, bool prevkeystate,
+                    bool convertkey) override {}
+
+    [[nodiscard]] tTVPImeMode GetDefaultImeMode() const override {
+        return imDisable;
+    }
+
+    void SetImeMode(tTVPImeMode mode) override {}
+
+    void ResetImeMode() override {}
+
+    void UpdateWindow(tTVPUpdateType type) override {
+        // Rendering is driven by engine_tick / engine_read_frame_rgba
+    }
+
+    void SetVisibleFromScript(bool b) override { visible_ = b; }
+
+    void SetUseMouseKey(bool b) override {}
+
+    [[nodiscard]] bool GetUseMouseKey() const override { return false; }
+
+    void ResetMouseVelocity() override {}
+
+    void ResetTouchVelocity(tjs_int id) override {}
+
+    bool GetMouseVelocity(float &x, float &y, float &speed) const override {
+        x = y = speed = 0;
+        return false;
+    }
+
+    void TickBeat() override {
+        // Called every ~50ms; nothing to do in Flutter mode
+    }
+
+    TVPOverlayNode *GetPrimaryArea() override { return nullptr; }
+
+private:
+    tTJSNI_Window *owner_;
+    bool visible_;
+    std::string caption_;
+    tjs_int width_;
+    tjs_int height_;
+    bool active_;
+    bool closing_;
+};
 
 // ---------------------------------------------------------------------------
 // TVPInitUIExtension — originally in ui/extension/UIExtension.cpp
@@ -35,12 +199,13 @@ void TVPInitUIExtension() {
 
 // ---------------------------------------------------------------------------
 // TVPCreateAndAddWindow — originally in MainScene.cpp
-// Creates a window layer and adds it to the scene tree. In Flutter mode,
-// the window is a logical entity; rendering goes through glReadPixels.
+// Creates a FlutterWindowLayer and registers it with the application.
 // ---------------------------------------------------------------------------
 iWindowLayer *TVPCreateAndAddWindow(tTJSNI_Window *w) {
-    spdlog::warn("TVPCreateAndAddWindow: stub — window creation handled by Flutter");
-    return nullptr;
+    auto *layer = new FlutterWindowLayer(w);
+    spdlog::info("TVPCreateAndAddWindow: created FlutterWindowLayer ({}x{})",
+                 layer->GetWidth(), layer->GetHeight());
+    return layer;
 }
 
 // ---------------------------------------------------------------------------
