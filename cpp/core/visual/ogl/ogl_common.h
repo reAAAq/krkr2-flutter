@@ -1,36 +1,16 @@
 #pragma once
 
 // ---------------------------------------------------------------------------
-// OpenGL headers — unified through ANGLE when available
+// OpenGL headers — all platforms use ANGLE GLES2 + EGL
 // ---------------------------------------------------------------------------
-#if defined(KRKR_USE_ANGLE)
 // ANGLE provides a consistent GLES2 + EGL interface across all platforms:
-//   macOS  → Metal backend
+//   macOS   → Metal backend
 //   Windows → D3D11 backend
-//   Linux  → Desktop GL / Vulkan backend
+//   Linux   → Desktop GL / Vulkan backend
 //   Android → native GLES / Vulkan backend
 #include <EGL/egl.h>
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
-
-#elif defined(_WIN32) || defined(LINUX)
-#if defined(_M_X64)
-#define GLEW_STATIC
-#endif
-#include "GL/glew.h"
-
-#elif TARGET_OS_MAC
-#include <OpenGL/gl.h>
-
-#elif TARGET_OS_IPHONE
-#include <OpenGLES/ES2/gl.h>
-#include <OpenGLES/ES2/glext.h>
-
-#elif defined(__ANDROID__)
-#include <GLES2/gl2.h>
-#include <GLES2/gl2ext.h>
-#include <EGL/egl.h>
-#endif
 
 #ifndef GL_UNPACK_ROW_LENGTH
 #define GL_UNPACK_ROW_LENGTH 0x0CF2

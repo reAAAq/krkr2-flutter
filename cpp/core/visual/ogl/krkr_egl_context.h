@@ -14,21 +14,9 @@
 
 #include <cstdint>
 
-// ANGLE / native EGL availability
-#if defined(KRKR_USE_ANGLE) || defined(__ANDROID__)
+// ANGLE / native EGL — always available (all platforms use ANGLE)
 #define KRKR_HAS_EGL 1
 #include <EGL/egl.h>
-#else
-#define KRKR_HAS_EGL 0
-// Provide stub types so the header compiles without EGL
-typedef void* EGLDisplay;
-typedef void* EGLSurface;
-typedef void* EGLContext;
-typedef void* EGLConfig;
-#define EGL_NO_DISPLAY  ((EGLDisplay)0)
-#define EGL_NO_SURFACE  ((EGLSurface)0)
-#define EGL_NO_CONTEXT  ((EGLContext)0)
-#endif
 
 namespace krkr {
 

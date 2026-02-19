@@ -3,11 +3,6 @@
  * @brief Lightweight OpenGL state cache — replaces Cocos2d-x ccGLStateCache.
  */
 
-// Silence macOS OpenGL deprecation warnings (ANGLE will replace native GL)
-#if defined(__APPLE__)
-#define GL_SILENCE_DEPRECATION
-#endif
-
 #include "krkr_gl.h"
 #include <algorithm>
 #include <vector>

@@ -3,15 +3,8 @@
  * @brief Headless EGL context manager using ANGLE.
  */
 
-// Silence macOS OpenGL deprecation warnings
-#if defined(__APPLE__)
-#define GL_SILENCE_DEPRECATION
-#endif
-
 #include "krkr_egl_context.h"
 #include "krkr_gl.h"
-
-#if KRKR_HAS_EGL
 
 #include <GLES2/gl2.h>
 #include <spdlog/spdlog.h>
@@ -219,33 +212,3 @@ EGLContextManager& GetEngineEGLContext() {
 }
 
 } // namespace krkr
-
-#else // !KRKR_HAS_EGL
-
-// Stub implementation when EGL (ANGLE) is not available.
-// The engine falls back to whatever GL context Cocos2d-x provides.
-#include <spdlog/spdlog.h>
-
-namespace krkr {
-
-EGLContextManager::~EGLContextManager() {}
-bool EGLContextManager::Initialize(uint32_t, uint32_t) {
-    spdlog::warn("EGLContextManager: ANGLE not available, using host GL context");
-    return false;
-}
-void EGLContextManager::Destroy() {}
-bool EGLContextManager::MakeCurrent() { return false; }
-bool EGLContextManager::ReleaseCurrent() { return false; }
-bool EGLContextManager::Resize(uint32_t, uint32_t) { return false; }
-void EGLContextManager::SwapBuffers() {}
-bool EGLContextManager::CreateSurface(uint32_t, uint32_t) { return false; }
-void EGLContextManager::DestroySurface() {}
-
-EGLContextManager& GetEngineEGLContext() {
-    static EGLContextManager instance;
-    return instance;
-}
-
-} // namespace krkr
-
-#endif // KRKR_HAS_EGL
