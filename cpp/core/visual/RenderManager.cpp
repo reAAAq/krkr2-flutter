@@ -1,6 +1,6 @@
 #include "RenderManager.h"
-#include "renderer/CCTexture2D.h"
-typedef cocos2d::Texture2D::PixelFormat CCPixelFormat;
+#include "ogl/krkr_texture2d.h"
+typedef krkr::PixelFormat CCPixelFormat;
 #include "MsgIntf.h"
 #include "LayerBitmapIntf.h"
 #include "SysInitIntf.h"
@@ -355,15 +355,15 @@ public:
     }
     tjs_int GetPitch() const override { return Pitch; }
 
-    cocos2d::Texture2D *
-    GetAdapterTexture(cocos2d::Texture2D *origTex) override {
+    krkr::Texture2D *
+    GetAdapterTexture(krkr::Texture2D *origTex) override {
         if(!origTex || origTex->getPixelsWide() != Width ||
            origTex->getPixelsHigh() != Height) {
-            origTex = new cocos2d::Texture2D;
+            origTex = new krkr::Texture2D;
             origTex->autorelease();
             origTex->initWithData(BmpData, Pitch * Height,
                                   CCPixelFormat::RGBA8888, Pitch / 4, Height,
-                                  cocos2d::Size::ZERO);
+                                  krkr::Size::ZERO);
         } else {
             origTex->updateWithData(BmpData, 0, 0, Pitch / 4, Height);
         }
@@ -465,16 +465,16 @@ public:
         assert(0);
     }
 
-    cocos2d::Texture2D *
-    GetAdapterTexture(cocos2d::Texture2D *origTex) override {
+    krkr::Texture2D *
+    GetAdapterTexture(krkr::Texture2D *origTex) override {
         GetPixelData();
         if(!origTex || origTex->getPixelsWide() != Width ||
            origTex->getPixelsHigh() != Height) {
-            origTex = new cocos2d::Texture2D;
+            origTex = new krkr::Texture2D;
             origTex->autorelease();
             origTex->initWithData(BmpData, Pitch * Height,
                                   CCPixelFormat::RGBA8888, Width, Height,
-                                  cocos2d::Size::ZERO);
+                                  krkr::Size::ZERO);
         } else {
             origTex->updateWithData(BmpData, 0, 0, Width, Height);
         }
@@ -556,15 +556,15 @@ public:
         return 1;
     }
 
-    cocos2d::Texture2D *
-    GetAdapterTexture(cocos2d::Texture2D *origTex) override {
+    krkr::Texture2D *
+    GetAdapterTexture(krkr::Texture2D *origTex) override {
         if(!origTex || origTex->getPixelsWide() != Width ||
            origTex->getPixelsHigh() != _scanline.size()) {
-            origTex = new cocos2d::Texture2D;
+            origTex = new krkr::Texture2D;
             origTex->autorelease();
             origTex->initWithData(nullptr, Pitch * _scanline.size(),
                                   CCPixelFormat::RGBA8888, Width,
-                                  _scanline.size(), cocos2d::Size::ZERO);
+                                  _scanline.size(), krkr::Size::ZERO);
         }
         int y = 0;
         for(const tjs_uint8 *line : _scanline) {
