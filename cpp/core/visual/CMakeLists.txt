@@ -90,24 +90,16 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
         cocos2dx::cocos2d
 )
 
-# ANGLE (EGL + GLES2) — will eventually replace cocos2dx
-# Phase 0: only add ANGLE include directories + compile definition.
-# Actual library linking will be enabled in Phase 2 when cocos2dx is removed
-# (currently cocos2dx ext_xxhash and ANGLE both export XXH32, causing duplicate symbols).
+# ANGLE (EGL + GLES2) — replaces cocos2dx GL context/rendering
 if(NOT ANDROID)
     find_package(unofficial-angle CONFIG QUIET)
     if(unofficial-angle_FOUND)
-        # Get ANGLE include directories without linking
-        get_target_property(_angle_egl_inc unofficial::angle::libEGL INTERFACE_INCLUDE_DIRECTORIES)
-        get_target_property(_angle_gles_inc unofficial::angle::libGLESv2 INTERFACE_INCLUDE_DIRECTORIES)
-        if(_angle_egl_inc)
-            target_include_directories(${PROJECT_NAME} PRIVATE ${_angle_egl_inc})
-        endif()
-        if(_angle_gles_inc)
-            target_include_directories(${PROJECT_NAME} PRIVATE ${_angle_gles_inc})
-        endif()
+        target_link_libraries(${PROJECT_NAME} PRIVATE
+            unofficial::angle::libEGL
+            unofficial::angle::libGLESv2
+        )
         target_compile_definitions(${PROJECT_NAME} PRIVATE KRKR_USE_ANGLE=1)
-        message(STATUS "ANGLE found — headers added, library linking deferred to Phase 2")
+        message(STATUS "ANGLE found — EGL + GLES2 libraries linked (Phase 2)")
     else()
         message(STATUS "ANGLE not found — krkr_egl_context will use fallback (current cocos2d GL context)")
     endif()

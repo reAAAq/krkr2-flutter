@@ -65,3 +65,12 @@ target_link_libraries(${PROJECT_NAME} INTERFACE
     cocos2dx::cocos2d
     $<$<BOOL:${ANDROID}>:$<LINK_LIBRARY:WHOLE_ARCHIVE,cocos2dx::cpp_android_spec>>
 )
+
+# Resolve duplicate symbol conflict between ANGLE (xxhash) and cocos2d-x (ext_xxhash).
+# Both libraries embed xxhash; on Apple platforms the new ld (ld-prime) refuses
+# duplicate symbols. Use -ld_classic to fall back to the classic linker behavior
+# that silently picks one. This workaround is temporary — when cocos2d-x is fully
+# removed in Phase 5 the conflict disappears.
+if(APPLE)
+    target_link_options(${PROJECT_NAME} INTERFACE "LINKER:-ld_classic")
+endif()

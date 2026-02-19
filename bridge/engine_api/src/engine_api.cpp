@@ -14,29 +14,16 @@
 #include <memory>
 #include <vector>
 
-#if defined(__APPLE__)
-#include <objc/message.h>
-#include <objc/objc.h>
-#endif
-
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
-#include "base/CCDirector.h"
-#include "base/CCEventDispatcher.h"
-#include "base/CCEventKeyboard.h"
-#include "base/CCEventMouse.h"
 #include "environ/Application.h"
-#include "environ/cocos2d/AppDelegate.h"
+#include "environ/EngineBootstrap.h"
 #include "environ/cocos2d/MainScene.h"
 #include "base/SysInitIntf.h"
 #include "base/impl/SysInitImpl.h"
-#include "platform/CCGLView.h"
 #include "visual/ogl/ogl_common.h"
-
-#if defined(TARGET_OS_MAC) && TARGET_OS_MAC && !TARGET_OS_IPHONE
-#include "platform/desktop/CCGLViewImpl-desktop.h"
-#endif
+#include "visual/ogl/krkr_egl_context.h"
 
 int TVPDrawSceneOnce(int interval);
 
@@ -78,8 +65,7 @@ thread_local std::string g_thread_error;
 engine_handle_t g_runtime_owner = nullptr;
 bool g_runtime_active = false;
 bool g_runtime_started_once = false;
-std::unique_ptr<TVPAppDelegate> g_host_app_delegate;
-bool g_cocos_bootstrapped = false;
+bool g_engine_bootstrapped = false;
 std::once_flag g_loggers_init_once;
 
 std::shared_ptr<spdlog::logger> EnsureNamedLogger(const char* name) {
@@ -154,17 +140,14 @@ void ClearHandleErrorLocked(engine_handle_s* impl) {
   impl->last_error.clear();
 }
 
-bool EnsureHostCocosRuntimeInitialized() {
-  if (g_cocos_bootstrapped) {
+bool EnsureEngineRuntimeInitialized(uint32_t width, uint32_t height) {
+  if (g_engine_bootstrapped) {
     return true;
   }
-  if (!g_host_app_delegate) {
-    g_host_app_delegate = std::make_unique<TVPAppDelegate>();
-  }
-  if (!g_host_app_delegate->bootstrapForHostRuntime()) {
+  if (!TVPEngineBootstrap::Initialize(width, height)) {
     return false;
   }
-  g_cocos_bootstrapped = true;
+  g_engine_bootstrapped = true;
   return true;
 }
 
@@ -188,13 +171,15 @@ FrameReadbackLayout GetFrameReadbackLayoutLocked(engine_handle_s* impl) {
     layout.read_y = viewport[1];
     layout.width = static_cast<uint32_t>(viewport[2]);
     layout.height = static_cast<uint32_t>(viewport[3]);
-  } else if (auto* director = cocos2d::Director::getInstance();
-             director != nullptr) {
-    if (auto* gl_view = director->getOpenGLView(); gl_view != nullptr) {
-      const cocos2d::Size frame_size = gl_view->getFrameSize();
-      if (frame_size.width > 0.f && frame_size.height > 0.f) {
-        layout.width = static_cast<uint32_t>(frame_size.width);
-        layout.height = static_cast<uint32_t>(frame_size.height);
+  } else {
+    // Fallback: use the EGL surface dimensions
+    auto& egl = krkr::GetEngineEGLContext();
+    if (egl.IsValid()) {
+      const uint32_t egl_w = egl.GetWidth();
+      const uint32_t egl_h = egl.GetHeight();
+      if (egl_w > 0 && egl_h > 0) {
+        layout.width = egl_w;
+        layout.height = egl_h;
       }
     }
   }
@@ -214,12 +199,6 @@ bool ReadCurrentFrameRgba(const FrameReadbackLayout& layout, void* out_pixels) {
     return false;
   }
 
-#if defined(TARGET_OS_MAC) && TARGET_OS_MAC && !TARGET_OS_IPHONE
-  GLint previous_read_buffer = GL_BACK;
-  glGetIntegerv(GL_READ_BUFFER, &previous_read_buffer);
-  glReadBuffer(GL_FRONT);
-#endif
-
   glFinish();
   glPixelStorei(GL_PACK_ALIGNMENT, 4);
   glReadPixels(static_cast<GLint>(layout.read_x),
@@ -228,14 +207,6 @@ bool ReadCurrentFrameRgba(const FrameReadbackLayout& layout, void* out_pixels) {
                static_cast<GLsizei>(layout.height), GL_RGBA,
                GL_UNSIGNED_BYTE, out_pixels);
   const GLenum read_pixels_error = glGetError();
-
-#if defined(TARGET_OS_MAC) && TARGET_OS_MAC && !TARGET_OS_IPHONE
-  glReadBuffer(previous_read_buffer);
-  const GLenum restore_read_buffer_error = glGetError();
-  if (restore_read_buffer_error != GL_NO_ERROR) {
-    return false;
-  }
-#endif
 
   if (read_pixels_error != GL_NO_ERROR) {
     return false;
@@ -262,106 +233,35 @@ bool IsFinitePointerValue(double value) {
   return std::isfinite(value);
 }
 
-cocos2d::EventMouse::MouseButton ResolveMouseButtonFromMask(int32_t button_mask) {
-  if ((button_mask & 2) != 0) {
-    return cocos2d::EventMouse::MouseButton::BUTTON_RIGHT;
-  }
-  if ((button_mask & 4) != 0) {
-    return cocos2d::EventMouse::MouseButton::BUTTON_MIDDLE;
-  }
-  return cocos2d::EventMouse::MouseButton::BUTTON_LEFT;
-}
-
-void DispatchMouseEvent(cocos2d::EventDispatcher* dispatcher,
-                        cocos2d::GLView* gl_view,
-                        cocos2d::EventMouse::MouseEventType type,
-                        float x,
-                        float y,
-                        int32_t button_mask,
-                        float scroll_x,
-                        float scroll_y) {
-  if (dispatcher == nullptr || gl_view == nullptr) {
-    return;
-  }
-
-  cocos2d::EventMouse event(type);
-  const cocos2d::Rect& viewport = gl_view->getViewPortRect();
-  const float cursor_x = (x - viewport.origin.x) / gl_view->getScaleX();
-  const float cursor_y =
-      (viewport.origin.y + viewport.size.height - y) / gl_view->getScaleY();
-  event.setCursorPosition(cursor_x, cursor_y);
-
-  if (type == cocos2d::EventMouse::MouseEventType::MOUSE_SCROLL) {
-    event.setScrollData(scroll_x, -scroll_y);
-  } else {
-    event.setMouseButton(ResolveMouseButtonFromMask(button_mask));
-  }
-
-  dispatcher->dispatchEvent(&event);
-}
-
 engine_result_t DispatchInputEventNow(engine_handle_s* impl,
                                       const engine_input_event_t& event,
                                       const char** out_error_message) {
-  auto* director = cocos2d::Director::getInstance();
-  if (director == nullptr) {
+  // In Phase 2 we use ANGLE EGL Pbuffer (no native window / GLView).
+  // Input events are forwarded directly to the MainScene (which still
+  // exists as the Cocos2d-x scene for now).  Phase 3 will replace
+  // MainScene with EngineLoop and provide a clean input path.
+  auto* scene = TVPMainScene::GetInstance();
+  if (scene == nullptr) {
     if (out_error_message != nullptr) {
-      *out_error_message = "cocos director is unavailable";
-    }
-    return ENGINE_RESULT_INTERNAL_ERROR;
-  }
-  auto* gl_view = director->getOpenGLView();
-  if (gl_view == nullptr) {
-    if (out_error_message != nullptr) {
-      *out_error_message = "OpenGL view is unavailable";
+      *out_error_message = "main scene is unavailable";
     }
     return ENGINE_RESULT_INVALID_STATE;
-  }
-  auto* dispatcher = director->getEventDispatcher();
-  if (dispatcher == nullptr) {
-    if (out_error_message != nullptr) {
-      *out_error_message = "event dispatcher is unavailable";
-    }
-    return ENGINE_RESULT_INTERNAL_ERROR;
   }
 
   const float x = static_cast<float>(event.x);
   const float y = static_cast<float>(event.y);
-  constexpr intptr_t kPrimaryTouchPointerId = 0;
-  const bool left_button = (event.button & 1) != 0;
+
   switch (event.type) {
     case ENGINE_INPUT_EVENT_POINTER_DOWN: {
       if (auto logger = spdlog::get("core"); logger != nullptr) {
         logger->info("engine_send_input pointer_down id={} x={} y={}",
                      event.pointer_id, event.x, event.y);
       }
-      if (left_button) {
-        float xs[] = {x};
-        float ys[] = {y};
-        intptr_t ids[] = {kPrimaryTouchPointerId};
-        auto [_, inserted] = impl->active_pointer_ids.insert(kPrimaryTouchPointerId);
-        if (inserted) {
-          gl_view->handleTouchesBegin(1, ids, xs, ys);
-        } else {
-          gl_view->handleTouchesMove(1, ids, xs, ys);
-        }
-      }
-      DispatchMouseEvent(
-          dispatcher, gl_view, cocos2d::EventMouse::MouseEventType::MOUSE_DOWN,
-          x, y, event.button, 0.0f, 0.0f);
+      // TODO(Phase 3): Forward to EngineLoop::HandleMouseEvent
       break;
     }
     case ENGINE_INPUT_EVENT_POINTER_MOVE: {
-      if (impl->active_pointer_ids.find(kPrimaryTouchPointerId) !=
-          impl->active_pointer_ids.end()) {
-        float xs[] = {x};
-        float ys[] = {y};
-        intptr_t ids[] = {kPrimaryTouchPointerId};
-        gl_view->handleTouchesMove(1, ids, xs, ys);
-      }
-      DispatchMouseEvent(
-          dispatcher, gl_view, cocos2d::EventMouse::MouseEventType::MOUSE_MOVE,
-          x, y, event.button, 0.0f, 0.0f);
+      // TODO(Phase 3): Forward to EngineLoop::HandleMouseEvent
       break;
     }
     case ENGINE_INPUT_EVENT_POINTER_UP: {
@@ -369,32 +269,18 @@ engine_result_t DispatchInputEventNow(engine_handle_s* impl,
         logger->info("engine_send_input pointer_up id={} x={} y={}",
                      event.pointer_id, event.x, event.y);
       }
-      if (left_button &&
-          impl->active_pointer_ids.erase(kPrimaryTouchPointerId) > 0) {
-        float xs[] = {x};
-        float ys[] = {y};
-        intptr_t ids[] = {kPrimaryTouchPointerId};
-        gl_view->handleTouchesEnd(1, ids, xs, ys);
-      }
-      DispatchMouseEvent(
-          dispatcher, gl_view, cocos2d::EventMouse::MouseEventType::MOUSE_UP, x,
-          y, event.button, 0.0f, 0.0f);
+      // TODO(Phase 3): Forward to EngineLoop::HandleMouseEvent
       break;
     }
     case ENGINE_INPUT_EVENT_POINTER_SCROLL: {
-      DispatchMouseEvent(
-          dispatcher, gl_view,
-          cocos2d::EventMouse::MouseEventType::MOUSE_SCROLL, x, y,
-          event.button, static_cast<float>(event.delta_x),
-          static_cast<float>(event.delta_y));
+      // TODO(Phase 3): Forward to EngineLoop::HandleMouseEvent
       break;
     }
     case ENGINE_INPUT_EVENT_KEY_DOWN:
     case ENGINE_INPUT_EVENT_KEY_UP:
     case ENGINE_INPUT_EVENT_TEXT_INPUT:
     case ENGINE_INPUT_EVENT_BACK:
-      // Runtime keyboard/text input is currently handled by native window
-      // integration. Keep API acceptance for forward compatibility.
+      // TODO(Phase 3): Forward to EngineLoop::HandleKeyEvent
       break;
     default:
       break;
@@ -404,21 +290,6 @@ engine_result_t DispatchInputEventNow(engine_handle_s* impl,
     *out_error_message = nullptr;
   }
   return ENGINE_RESULT_OK;
-}
-
-void DisableNativeMouseCallbacks(cocos2d::GLView* gl_view) {
-  auto* desktop_view = dynamic_cast<cocos2d::GLViewImpl*>(gl_view);
-  if (desktop_view == nullptr) {
-    return;
-  }
-  GLFWwindow* glfw_window = desktop_view->getWindow();
-  if (glfw_window == nullptr) {
-    return;
-  }
-
-  glfwSetMouseButtonCallback(glfw_window, nullptr);
-  glfwSetCursorPosCallback(glfw_window, nullptr);
-  glfwSetScrollCallback(glfw_window, nullptr);
 }
 #endif
 
@@ -590,11 +461,11 @@ engine_result_t engine_open_game(engine_handle_t handle,
   TVPTerminateOnNoWindowStartup = false;
   TVPHostSuppressProcessExit = true;
 
-  if (!EnsureHostCocosRuntimeInitialized()) {
+  if (!EnsureEngineRuntimeInitialized(impl->surface_width, impl->surface_height)) {
     return SetHandleErrorAndReturnLocked(
         impl,
         ENGINE_RESULT_INTERNAL_ERROR,
-        "failed to initialize cocos runtime for host mode");
+        "failed to initialize engine runtime for host mode");
   }
 
   try {
@@ -618,16 +489,10 @@ engine_result_t engine_open_game(engine_handle_t handle,
     scene->scheduleUpdate();
   }
 
-#if defined(TARGET_OS_MAC) && TARGET_OS_MAC && !TARGET_OS_IPHONE
-  if (!impl->native_mouse_callbacks_disabled) {
-    if (auto* director = cocos2d::Director::getInstance(); director != nullptr) {
-      if (auto* gl_view = director->getOpenGLView(); gl_view != nullptr) {
-        DisableNativeMouseCallbacks(gl_view);
-        impl->native_mouse_callbacks_disabled = true;
-      }
-    }
-  }
-#endif
+  // No native GLFW window in ANGLE Pbuffer mode, so no mouse callbacks
+  // to disable. The native_mouse_callbacks_disabled flag is kept for
+  // backward compatibility but is a no-op now.
+  impl->native_mouse_callbacks_disabled = true;
 
   g_runtime_active = true;
   g_runtime_owner = handle;
@@ -889,28 +754,16 @@ engine_result_t engine_set_surface_size(engine_handle_t handle,
   impl->frame_rgba.clear();
   impl->frame_ready = false;
 
-  // If the cocos runtime is active, propagate the new surface size to the
-  // OpenGL view so that frame-size, design-resolution and viewport stay in
-  // sync with the actual display area provided by the host (e.g. Flutter
-  // container in native-view mode).
+  // Propagate the new surface size to the EGL Pbuffer and viewport.
   if (g_runtime_active && g_runtime_owner == handle) {
-    auto* director = cocos2d::Director::getInstance();
-    if (director != nullptr) {
-      auto* gl_view = director->getOpenGLView();
-      if (gl_view != nullptr) {
-        const cocos2d::Size current_frame = gl_view->getFrameSize();
-        const float new_w = static_cast<float>(width);
-        const float new_h = static_cast<float>(height);
-        if (std::abs(current_frame.width - new_w) > 0.5f ||
-            std::abs(current_frame.height - new_h) > 0.5f) {
-          // Replicate what onGLFWWindowSizeFunCallback does when the GLFW
-          // window is resized: update frame size, re-apply design resolution
-          // and reset the viewport.
-          gl_view->setFrameSize(new_w, new_h);
-          gl_view->setDesignResolutionSize(
-              960.0f, 640.0f, ResolutionPolicy::FIXED_WIDTH);
-          director->setViewport();
-        }
+    auto& egl = krkr::GetEngineEGLContext();
+    if (egl.IsValid()) {
+      const uint32_t cur_w = egl.GetWidth();
+      const uint32_t cur_h = egl.GetHeight();
+      if (cur_w != width || cur_h != height) {
+        egl.Resize(width, height);
+        glViewport(0, 0, static_cast<GLsizei>(width),
+                   static_cast<GLsizei>(height));
       }
     }
   }
@@ -1069,32 +922,11 @@ engine_result_t engine_get_host_native_window(engine_handle_t handle,
   }
 
 #if defined(TARGET_OS_MAC) && TARGET_OS_MAC && !TARGET_OS_IPHONE
-  auto* director = cocos2d::Director::getInstance();
-  if (director == nullptr) {
-    return SetHandleErrorAndReturnLocked(
-        impl,
-        ENGINE_RESULT_INTERNAL_ERROR,
-        "cocos director is unavailable");
-  }
-  auto* gl_view = director->getOpenGLView();
-  if (gl_view == nullptr) {
-    return SetHandleErrorAndReturnLocked(
-        impl,
-        ENGINE_RESULT_INVALID_STATE,
-        "OpenGL view is unavailable");
-  }
-  void* cocoa_window = gl_view->getCocoaWindow();
-  if (cocoa_window == nullptr) {
-    return SetHandleErrorAndReturnLocked(
-        impl,
-        ENGINE_RESULT_INVALID_STATE,
-        "cocoa window is unavailable");
-  }
-
-  *out_window_handle = cocoa_window;
-  ClearHandleErrorLocked(impl);
-  SetThreadError(nullptr);
-  return ENGINE_RESULT_OK;
+  // No native GLFW window in ANGLE Pbuffer mode.
+  return SetHandleErrorAndReturnLocked(
+      impl,
+      ENGINE_RESULT_NOT_SUPPORTED,
+      "engine_get_host_native_window is not supported in headless ANGLE mode");
 #else
   return SetHandleErrorAndReturnLocked(
       impl,
@@ -1131,62 +963,11 @@ engine_result_t engine_get_host_native_view(engine_handle_t handle,
         "engine_open_game must succeed before engine_get_host_native_view");
   }
 
-#if defined(TARGET_OS_MAC) && TARGET_OS_MAC && !TARGET_OS_IPHONE
-  auto* director = cocos2d::Director::getInstance();
-  if (director == nullptr) {
-    return SetHandleErrorAndReturnLocked(
-        impl,
-        ENGINE_RESULT_INTERNAL_ERROR,
-        "cocos director is unavailable");
-  }
-  auto* gl_view = director->getOpenGLView();
-  if (gl_view == nullptr) {
-    return SetHandleErrorAndReturnLocked(
-        impl,
-        ENGINE_RESULT_INVALID_STATE,
-        "OpenGL view is unavailable");
-  }
-  void* cocoa_window = gl_view->getCocoaWindow();
-  if (cocoa_window == nullptr) {
-    return SetHandleErrorAndReturnLocked(
-        impl,
-        ENGINE_RESULT_INVALID_STATE,
-        "cocoa window is unavailable");
-  }
-
-#if defined(__APPLE__)
-  id ns_window = reinterpret_cast<id>(cocoa_window);
-  const SEL content_view_sel = sel_registerName("contentView");
-  if (content_view_sel == nullptr) {
-    return SetHandleErrorAndReturnLocked(
-        impl,
-        ENGINE_RESULT_INTERNAL_ERROR,
-        "contentView selector is unavailable");
-  }
-  id ns_view = ((id(*)(id, SEL))objc_msgSend)(ns_window, content_view_sel);
-  if (ns_view == nullptr) {
-    return SetHandleErrorAndReturnLocked(
-        impl,
-        ENGINE_RESULT_INVALID_STATE,
-        "cocoa contentView is unavailable");
-  }
-
-  *out_view_handle = reinterpret_cast<void*>(ns_view);
-  ClearHandleErrorLocked(impl);
-  SetThreadError(nullptr);
-  return ENGINE_RESULT_OK;
-#else
+  // No native GLFW window in ANGLE Pbuffer mode — native view is unavailable.
   return SetHandleErrorAndReturnLocked(
       impl,
       ENGINE_RESULT_NOT_SUPPORTED,
-      "engine_get_host_native_view requires Objective-C runtime");
-#endif
-#else
-  return SetHandleErrorAndReturnLocked(
-      impl,
-      ENGINE_RESULT_NOT_SUPPORTED,
-      "engine_get_host_native_view is only supported on macOS runtime");
-#endif
+      "engine_get_host_native_view is not supported in headless ANGLE mode");
 }
 
 engine_result_t engine_send_input(engine_handle_t handle,
