@@ -19,6 +19,7 @@
 
 #include "environ/Application.h"
 #include "environ/EngineBootstrap.h"
+#include "environ/EngineLoop.h"
 #include "environ/MainScene.h"
 #include "base/SysInitIntf.h"
 #include "base/impl/SysInitImpl.h"
@@ -228,7 +229,6 @@ bool ReadCurrentFrameRgba(const FrameReadbackLayout& layout, void* out_pixels) {
   return true;
 }
 
-#if defined(TARGET_OS_MAC) && TARGET_OS_MAC && !TARGET_OS_IPHONE
 bool IsFinitePointerValue(double value) {
   return std::isfinite(value);
 }
@@ -236,54 +236,32 @@ bool IsFinitePointerValue(double value) {
 engine_result_t DispatchInputEventNow(engine_handle_s* impl,
                                       const engine_input_event_t& event,
                                       const char** out_error_message) {
-  // In Phase 2 we use ANGLE EGL Pbuffer (no native window / GLView).
-  // Input events are forwarded directly to the MainScene (which still
-  // exists as the Cocos2d-x scene for now).  Phase 3 will replace
-  // MainScene with EngineLoop and provide a clean input path.
-  auto* scene = TVPMainScene::GetInstance();
-  if (scene == nullptr) {
+  auto* loop = EngineLoop::GetInstance();
+  if (loop == nullptr) {
     if (out_error_message != nullptr) {
-      *out_error_message = "main scene is unavailable";
+      *out_error_message = "engine loop is unavailable";
     }
     return ENGINE_RESULT_INVALID_STATE;
   }
 
-  const float x = static_cast<float>(event.x);
-  const float y = static_cast<float>(event.y);
+  // Convert engine_input_event_t → EngineInputEvent (bridge → core)
+  EngineInputEvent core_event;
+  core_event.type = event.type;
+  core_event.x = event.x;
+  core_event.y = event.y;
+  core_event.delta_x = event.delta_x;
+  core_event.delta_y = event.delta_y;
+  core_event.pointer_id = event.pointer_id;
+  core_event.button = event.button;
+  core_event.key_code = event.key_code;
+  core_event.modifiers = event.modifiers;
+  core_event.unicode_codepoint = event.unicode_codepoint;
 
-  switch (event.type) {
-    case ENGINE_INPUT_EVENT_POINTER_DOWN: {
-      if (auto logger = spdlog::get("core"); logger != nullptr) {
-        logger->info("engine_send_input pointer_down id={} x={} y={}",
-                     event.pointer_id, event.x, event.y);
-      }
-      // TODO(Phase 3): Forward to EngineLoop::HandleMouseEvent
-      break;
+  if (!loop->HandleInputEvent(core_event)) {
+    if (out_error_message != nullptr) {
+      *out_error_message = "input event dispatch failed (no active window?)";
     }
-    case ENGINE_INPUT_EVENT_POINTER_MOVE: {
-      // TODO(Phase 3): Forward to EngineLoop::HandleMouseEvent
-      break;
-    }
-    case ENGINE_INPUT_EVENT_POINTER_UP: {
-      if (auto logger = spdlog::get("core"); logger != nullptr) {
-        logger->info("engine_send_input pointer_up id={} x={} y={}",
-                     event.pointer_id, event.x, event.y);
-      }
-      // TODO(Phase 3): Forward to EngineLoop::HandleMouseEvent
-      break;
-    }
-    case ENGINE_INPUT_EVENT_POINTER_SCROLL: {
-      // TODO(Phase 3): Forward to EngineLoop::HandleMouseEvent
-      break;
-    }
-    case ENGINE_INPUT_EVENT_KEY_DOWN:
-    case ENGINE_INPUT_EVENT_KEY_UP:
-    case ENGINE_INPUT_EVENT_TEXT_INPUT:
-    case ENGINE_INPUT_EVENT_BACK:
-      // TODO(Phase 3): Forward to EngineLoop::HandleKeyEvent
-      break;
-    default:
-      break;
+    return ENGINE_RESULT_INVALID_STATE;
   }
 
   if (out_error_message != nullptr) {
@@ -291,7 +269,6 @@ engine_result_t DispatchInputEventNow(engine_handle_s* impl,
   }
   return ENGINE_RESULT_OK;
 }
-#endif
 
 }  // namespace
 
@@ -483,8 +460,13 @@ engine_result_t engine_open_game(engine_handle_t handle,
         "runtime requested termination during startup");
   }
 
-  // Keep host mode consistent with standalone startup path:
-  // scene update drives Application->Run() and frame presentation.
+  // Create EngineLoop and start the frame update loop.
+  EngineLoop::CreateInstance();
+  if (auto* loop = EngineLoop::GetInstance(); loop != nullptr) {
+    loop->Start();
+  }
+
+  // Keep TVPMainScene alive for backward compatibility.
   if (auto* scene = TVPMainScene::GetInstance(); scene != nullptr) {
     scene->scheduleUpdate();
   }
@@ -545,7 +527,6 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
                                          "engine is not in opened state");
   }
 
-#if defined(TARGET_OS_MAC) && TARGET_OS_MAC && !TARGET_OS_IPHONE
   while (!impl->pending_input_events.empty()) {
     const engine_input_event_t queued_event = impl->pending_input_events.front();
     impl->pending_input_events.pop_front();
@@ -559,7 +540,6 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
           dispatch_error != nullptr ? dispatch_error : "input dispatch failed");
     }
   }
-#endif
 
   if (TVPTerminated) {
     return SetHandleErrorAndReturnLocked(
@@ -1021,7 +1001,6 @@ engine_result_t engine_send_input(engine_handle_t handle,
                                            "unsupported input event type");
   }
 
-#if defined(TARGET_OS_MAC) && TARGET_OS_MAC && !TARGET_OS_IPHONE
   if (event->type == ENGINE_INPUT_EVENT_POINTER_DOWN ||
       event->type == ENGINE_INPUT_EVENT_POINTER_MOVE ||
       event->type == ENGINE_INPUT_EVENT_POINTER_UP ||
@@ -1040,7 +1019,6 @@ engine_result_t engine_send_input(engine_handle_t handle,
   if (impl->pending_input_events.size() > kMaxQueuedInputs) {
     impl->pending_input_events.pop_front();
   }
-#endif
 
   ClearHandleErrorLocked(impl);
   SetThreadError(nullptr);
