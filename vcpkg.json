@@ -28,6 +28,19 @@
     },
     "cocos2dx",
     {
+      "name": "angle",
+      "default-features": false,
+      "features": [
+        "metal"
+      ],
+      "platform": "osx"
+    },
+    {
+      "name": "angle",
+      "default-features": false,
+      "platform": "linux | windows"
+    },
+    {
       "name": "dirent",
       "platform": "windows"
     },
