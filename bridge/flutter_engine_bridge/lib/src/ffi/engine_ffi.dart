@@ -309,6 +309,29 @@ class EngineFfiBridge {
     }
   }
 
+  int setRenderTargetIOSurface({
+    required int iosurfaceId,
+    required int width,
+    required int height,
+  }) {
+    return _bindings.engineSetRenderTargetIOSurface(
+      _handle, iosurfaceId, width, height,
+    );
+  }
+
+  bool getFrameRenderedFlag() {
+    final outFlag = calloc<Uint32>();
+    try {
+      final result = _bindings.engineGetFrameRenderedFlag(_handle, outFlag);
+      if (result != kEngineResultOk) {
+        return false;
+      }
+      return outFlag.value != 0;
+    } finally {
+      calloc.free(outFlag);
+    }
+  }
+
   String lastError() {
     final errorPtr = _bindings.engineGetLastError(_handle);
     if (errorPtr == nullptr) {

@@ -198,6 +198,16 @@ typedef _EngineSendInputNative =
 typedef _EngineSendInputDart =
     int Function(Pointer<Void>, Pointer<EngineInputEvent>);
 
+typedef _EngineSetRenderTargetIOSurfaceNative =
+    Int32 Function(Pointer<Void>, Uint32, Uint32, Uint32);
+typedef _EngineSetRenderTargetIOSurfaceDart =
+    int Function(Pointer<Void>, int, int, int);
+
+typedef _EngineGetFrameRenderedFlagNative =
+    Int32 Function(Pointer<Void>, Pointer<Uint32>);
+typedef _EngineGetFrameRenderedFlagDart =
+    int Function(Pointer<Void>, Pointer<Uint32>);
+
 typedef _EngineGetLastErrorNative = Pointer<Utf8> Function(Pointer<Void>);
 typedef _EngineGetLastErrorDart = Pointer<Utf8> Function(Pointer<Void>);
 
@@ -250,6 +260,16 @@ class EngineBindings {
           .lookupFunction<_EngineSendInputNative, _EngineSendInputDart>(
             'engine_send_input',
           ),
+      engineSetRenderTargetIOSurface = library
+          .lookupFunction<
+            _EngineSetRenderTargetIOSurfaceNative,
+            _EngineSetRenderTargetIOSurfaceDart
+          >('engine_set_render_target_iosurface'),
+      engineGetFrameRenderedFlag = library
+          .lookupFunction<
+            _EngineGetFrameRenderedFlagNative,
+            _EngineGetFrameRenderedFlagDart
+          >('engine_get_frame_rendered_flag'),
       engineGetLastError = library
           .lookupFunction<_EngineGetLastErrorNative, _EngineGetLastErrorDart>(
             'engine_get_last_error',
@@ -270,6 +290,10 @@ class EngineBindings {
   engineGetFrameDesc;
   final int Function(Pointer<Void>, Pointer<Void>, int) engineReadFrameRgba;
   final int Function(Pointer<Void>, Pointer<EngineInputEvent>) engineSendInput;
+  final int Function(Pointer<Void>, int, int, int)
+  engineSetRenderTargetIOSurface;
+  final int Function(Pointer<Void>, Pointer<Uint32>)
+  engineGetFrameRenderedFlag;
   final Pointer<Utf8> Function(Pointer<Void>) engineGetLastError;
 
   static String _lastLoadError = '';

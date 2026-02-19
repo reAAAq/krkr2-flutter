@@ -182,6 +182,29 @@ class FlutterEngineBridge {
     );
   }
 
+  Future<int> engineSetRenderTargetIOSurface({
+    required int iosurfaceId,
+    required int width,
+    required int height,
+  }) async {
+    return _withFfiCall(
+      apiName: 'engine_set_render_target_iosurface',
+      call: (ffi) => ffi.setRenderTargetIOSurface(
+        iosurfaceId: iosurfaceId,
+        width: width,
+        height: height,
+      ),
+    );
+  }
+
+  Future<bool> engineGetFrameRenderedFlag() async {
+    final ffi = _ffiBridge;
+    if (ffi == null) {
+      return false;
+    }
+    return ffi.getFrameRenderedFlag();
+  }
+
   Future<int?> createTexture({required int width, required int height}) async {
     try {
       return await _platform.createTexture(width: width, height: height);
@@ -218,6 +241,59 @@ class FlutterEngineBridge {
       await _platform.disposeTexture(textureId: textureId);
     } catch (error) {
       _fallbackLastError = 'disposeTexture failed: $error';
+    }
+  }
+
+  /// Creates an IOSurface-backed texture for zero-copy rendering.
+  /// Returns a map with: textureId, ioSurfaceID, width, height.
+  Future<Map<String, dynamic>?> createIOSurfaceTexture({
+    required int width,
+    required int height,
+  }) async {
+    try {
+      return await _platform.createIOSurfaceTexture(
+        width: width,
+        height: height,
+      );
+    } catch (error) {
+      _fallbackLastError = 'createIOSurfaceTexture failed: $error';
+      return null;
+    }
+  }
+
+  /// Notifies Flutter that a new frame is available in the texture.
+  Future<void> notifyFrameAvailable({required int textureId}) async {
+    try {
+      await _platform.notifyFrameAvailable(textureId: textureId);
+    } catch (error) {
+      _fallbackLastError = 'notifyFrameAvailable failed: $error';
+    }
+  }
+
+  /// Resizes an IOSurface texture.
+  Future<Map<String, dynamic>?> resizeIOSurfaceTexture({
+    required int textureId,
+    required int width,
+    required int height,
+  }) async {
+    try {
+      return await _platform.resizeIOSurfaceTexture(
+        textureId: textureId,
+        width: width,
+        height: height,
+      );
+    } catch (error) {
+      _fallbackLastError = 'resizeIOSurfaceTexture failed: $error';
+      return null;
+    }
+  }
+
+  /// Disposes an IOSurface texture.
+  Future<void> disposeIOSurfaceTexture({required int textureId}) async {
+    try {
+      await _platform.disposeIOSurfaceTexture(textureId: textureId);
+    } catch (error) {
+      _fallbackLastError = 'disposeIOSurfaceTexture failed: $error';
     }
   }
 

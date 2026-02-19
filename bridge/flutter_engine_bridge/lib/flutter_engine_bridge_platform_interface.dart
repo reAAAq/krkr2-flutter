@@ -47,4 +47,36 @@ abstract class FlutterEngineBridgePlatform extends PlatformInterface {
   Future<void> disposeTexture({required int textureId}) {
     throw UnimplementedError('disposeTexture() has not been implemented.');
   }
+
+  /// Creates an IOSurface-backed texture for zero-copy rendering.
+  /// Returns a map with: textureId, ioSurfaceID, width, height.
+  Future<Map<String, dynamic>?> createIOSurfaceTexture({
+    required int width,
+    required int height,
+  }) {
+    throw UnimplementedError(
+        'createIOSurfaceTexture() has not been implemented.');
+  }
+
+  /// Notifies Flutter that a new frame is available in the texture.
+  Future<void> notifyFrameAvailable({required int textureId}) {
+    throw UnimplementedError(
+        'notifyFrameAvailable() has not been implemented.');
+  }
+
+  /// Resizes an IOSurface texture. Returns a map with updated ioSurfaceID.
+  Future<Map<String, dynamic>?> resizeIOSurfaceTexture({
+    required int textureId,
+    required int width,
+    required int height,
+  }) {
+    throw UnimplementedError(
+        'resizeIOSurfaceTexture() has not been implemented.');
+  }
+
+  /// Disposes an IOSurface texture.
+  Future<void> disposeIOSurfaceTexture({required int textureId}) {
+    throw UnimplementedError(
+        'disposeIOSurfaceTexture() has not been implemented.');
+  }
 }
