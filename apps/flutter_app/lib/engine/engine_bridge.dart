@@ -81,6 +81,25 @@ abstract interface class EngineBridge {
   Future<void> disposeTexture({required int textureId});
   Future<int> engineRuntimeApiVersion();
 
+  // IOSurface zero-copy rendering
+  Future<int> engineSetRenderTargetIOSurface({
+    required int iosurfaceId,
+    required int width,
+    required int height,
+  });
+  Future<bool> engineGetFrameRenderedFlag();
+  Future<Map<String, dynamic>?> createIOSurfaceTexture({
+    required int width,
+    required int height,
+  });
+  Future<void> notifyFrameAvailable({required int textureId});
+  Future<Map<String, dynamic>?> resizeIOSurfaceTexture({
+    required int textureId,
+    required int width,
+    required int height,
+  });
+  Future<void> disposeIOSurfaceTexture({required int textureId});
+
   String engineGetLastError();
 }
 

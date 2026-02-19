@@ -155,5 +155,54 @@ class FlutterEngineBridgeAdapter implements EngineBridge {
   Future<int> engineRuntimeApiVersion() => _delegate.engineRuntimeApiVersion();
 
   @override
+  Future<int> engineSetRenderTargetIOSurface({
+    required int iosurfaceId,
+    required int width,
+    required int height,
+  }) {
+    return _delegate.engineSetRenderTargetIOSurface(
+      iosurfaceId: iosurfaceId,
+      width: width,
+      height: height,
+    );
+  }
+
+  @override
+  Future<bool> engineGetFrameRenderedFlag() {
+    return _delegate.engineGetFrameRenderedFlag();
+  }
+
+  @override
+  Future<Map<String, dynamic>?> createIOSurfaceTexture({
+    required int width,
+    required int height,
+  }) {
+    return _delegate.createIOSurfaceTexture(width: width, height: height);
+  }
+
+  @override
+  Future<void> notifyFrameAvailable({required int textureId}) {
+    return _delegate.notifyFrameAvailable(textureId: textureId);
+  }
+
+  @override
+  Future<Map<String, dynamic>?> resizeIOSurfaceTexture({
+    required int textureId,
+    required int width,
+    required int height,
+  }) {
+    return _delegate.resizeIOSurfaceTexture(
+      textureId: textureId,
+      width: width,
+      height: height,
+    );
+  }
+
+  @override
+  Future<void> disposeIOSurfaceTexture({required int textureId}) {
+    return _delegate.disposeIOSurfaceTexture(textureId: textureId);
+  }
+
+  @override
   String engineGetLastError() => _delegate.engineGetLastError();
 }

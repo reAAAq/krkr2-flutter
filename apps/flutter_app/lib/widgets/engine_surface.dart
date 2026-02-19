@@ -18,12 +18,22 @@ class EngineInputEventType {
   static const int back = 8;
 }
 
+/// Rendering mode for the engine surface.
+enum EngineSurfaceMode {
+  /// IOSurface zero-copy mode (macOS only, highest performance).
+  iosurface,
+  /// Flutter Texture with RGBA pixel upload (cross-platform, slower).
+  texture,
+  /// Pure software decoding via RawImage (slowest, always works).
+  software,
+}
+
 class EngineSurface extends StatefulWidget {
   const EngineSurface({
     super.key,
     required this.bridge,
     required this.active,
-    this.preferTexture = true,
+    this.surfaceMode = EngineSurfaceMode.iosurface,
     this.pollInterval = const Duration(milliseconds: 16),
     this.onLog,
     this.onError,
@@ -31,7 +41,7 @@ class EngineSurface extends StatefulWidget {
 
   final EngineBridge bridge;
   final bool active;
-  final bool preferTexture;
+  final EngineSurfaceMode surfaceMode;
   final Duration pollInterval;
   final ValueChanged<String>? onLog;
   final ValueChanged<String>? onError;
@@ -52,7 +62,14 @@ class _EngineSurfaceState extends State<EngineSurface> {
   int _frameWidth = 0;
   int _frameHeight = 0;
   double _devicePixelRatio = 1.0;
+
+  // Legacy texture mode
   int? _textureId;
+
+  // IOSurface zero-copy mode
+  int? _ioSurfaceTextureId;
+  int? _ioSurfaceId;
+  bool _ioSurfaceInitInFlight = false;
 
   @override
   void initState() {
@@ -64,14 +81,14 @@ class _EngineSurfaceState extends State<EngineSurface> {
   void didUpdateWidget(covariant EngineSurface oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.bridge != widget.bridge) {
-      unawaited(_disposeTexture());
+      unawaited(_disposeAllTextures());
     }
-    if (!widget.preferTexture && oldWidget.preferTexture) {
-      unawaited(_disposeTexture());
+    if (oldWidget.surfaceMode != widget.surfaceMode) {
+      unawaited(_disposeAllTextures());
     }
     if (oldWidget.active != widget.active ||
         oldWidget.bridge != widget.bridge ||
-        oldWidget.preferTexture != widget.preferTexture) {
+        oldWidget.surfaceMode != widget.surfaceMode) {
       _reconcilePolling();
     }
   }
@@ -80,9 +97,14 @@ class _EngineSurfaceState extends State<EngineSurface> {
   void dispose() {
     _frameTimer?.cancel();
     _frameImage?.dispose();
-    unawaited(_disposeTexture());
+    unawaited(_disposeAllTextures());
     _focusNode.dispose();
     super.dispose();
+  }
+
+  Future<void> _disposeAllTextures() async {
+    await _disposeTexture();
+    await _disposeIOSurfaceTexture();
   }
 
   void _reconcilePolling() {
@@ -109,7 +131,7 @@ class _EngineSurfaceState extends State<EngineSurface> {
       16384,
     );
     if (width == _surfaceWidth && height == _surfaceHeight) {
-      await _ensureTexture();
+      await _ensureRenderTarget();
       return;
     }
 
@@ -128,12 +150,151 @@ class _EngineSurfaceState extends State<EngineSurface> {
     widget.onLog?.call(
       'surface resized: ${width}x$height (dpr=${_devicePixelRatio.toStringAsFixed(2)})',
     );
-    await _ensureTexture();
+    await _ensureRenderTarget();
   }
+
+  Future<void> _ensureRenderTarget() async {
+    switch (widget.surfaceMode) {
+      case EngineSurfaceMode.iosurface:
+        await _ensureIOSurfaceTexture();
+        break;
+      case EngineSurfaceMode.texture:
+        await _ensureTexture();
+        break;
+      case EngineSurfaceMode.software:
+        // No texture needed
+        break;
+    }
+  }
+
+  // --- IOSurface zero-copy mode ---
+
+  Future<void> _ensureIOSurfaceTexture() async {
+    if (!widget.active ||
+        _ioSurfaceInitInFlight ||
+        _surfaceWidth <= 0 ||
+        _surfaceHeight <= 0) {
+      return;
+    }
+
+    // Check if we need to resize
+    if (_ioSurfaceTextureId != null) {
+      if (_frameWidth == _surfaceWidth && _frameHeight == _surfaceHeight) {
+        return; // Already at correct size
+      }
+      // Resize needed
+      _ioSurfaceInitInFlight = true;
+      try {
+        final result = await widget.bridge.resizeIOSurfaceTexture(
+          textureId: _ioSurfaceTextureId!,
+          width: _surfaceWidth,
+          height: _surfaceHeight,
+        );
+        if (result != null && mounted) {
+          final int newIOSurfaceId = result['ioSurfaceID'] as int;
+          // Tell the engine about the new IOSurface
+          final int setResult =
+              await widget.bridge.engineSetRenderTargetIOSurface(
+            iosurfaceId: newIOSurfaceId,
+            width: _surfaceWidth,
+            height: _surfaceHeight,
+          );
+          if (setResult == 0) {
+            _ioSurfaceId = newIOSurfaceId;
+            _frameWidth = _surfaceWidth;
+            _frameHeight = _surfaceHeight;
+            widget.onLog?.call(
+              'IOSurface resized: ${_surfaceWidth}x$_surfaceHeight (iosurface=$newIOSurfaceId)',
+            );
+          } else {
+            _reportError(
+              'engine_set_render_target_iosurface failed after resize: $setResult',
+            );
+          }
+        }
+      } finally {
+        _ioSurfaceInitInFlight = false;
+      }
+      return;
+    }
+
+    _ioSurfaceInitInFlight = true;
+    try {
+      final result = await widget.bridge.createIOSurfaceTexture(
+        width: _surfaceWidth,
+        height: _surfaceHeight,
+      );
+
+      if (!mounted) return;
+      if (result == null) {
+        widget.onLog?.call(
+          'IOSurface texture unavailable, falling back to legacy texture mode',
+        );
+        // Fall back to legacy texture mode
+        await _ensureTexture();
+        return;
+      }
+
+      final int textureId = result['textureId'] as int;
+      final int ioSurfaceId = result['ioSurfaceID'] as int;
+
+      // Tell the C++ engine to render to this IOSurface
+      final int setResult =
+          await widget.bridge.engineSetRenderTargetIOSurface(
+        iosurfaceId: ioSurfaceId,
+        width: _surfaceWidth,
+        height: _surfaceHeight,
+      );
+
+      if (setResult != 0) {
+        _reportError(
+          'engine_set_render_target_iosurface failed: $setResult, '
+          'error=${widget.bridge.engineGetLastError()}',
+        );
+        // Clean up and fall back
+        await widget.bridge.disposeIOSurfaceTexture(textureId: textureId);
+        await _ensureTexture();
+        return;
+      }
+
+      final ui.Image? previousImage = _frameImage;
+      setState(() {
+        _ioSurfaceTextureId = textureId;
+        _ioSurfaceId = ioSurfaceId;
+        _textureId = null; // Dispose legacy texture if any
+        _frameImage = null;
+        _frameWidth = _surfaceWidth;
+        _frameHeight = _surfaceHeight;
+      });
+      previousImage?.dispose();
+      widget.onLog?.call(
+        'IOSurface zero-copy mode enabled (textureId=$textureId, iosurface=$ioSurfaceId)',
+      );
+    } finally {
+      _ioSurfaceInitInFlight = false;
+    }
+  }
+
+  Future<void> _disposeIOSurfaceTexture() async {
+    final int? textureId = _ioSurfaceTextureId;
+    if (textureId == null) return;
+    _ioSurfaceTextureId = null;
+    _ioSurfaceId = null;
+    // Detach from engine
+    try {
+      await widget.bridge.engineSetRenderTargetIOSurface(
+        iosurfaceId: 0,
+        width: 0,
+        height: 0,
+      );
+    } catch (_) {}
+    await widget.bridge.disposeIOSurfaceTexture(textureId: textureId);
+  }
+
+  // --- Legacy texture mode ---
 
   Future<void> _ensureTexture() async {
     if (!widget.active ||
-        !widget.preferTexture ||
         _textureInitInFlight ||
         _textureId != null) {
       return;
@@ -178,6 +339,8 @@ class _EngineSurfaceState extends State<EngineSurface> {
     await widget.bridge.disposeTexture(textureId: textureId);
   }
 
+  // --- Frame polling ---
+
   Future<void> _pollFrame() async {
     if (!widget.active || _frameInFlight) {
       return;
@@ -185,6 +348,22 @@ class _EngineSurfaceState extends State<EngineSurface> {
 
     _frameInFlight = true;
     try {
+      // IOSurface zero-copy mode: just notify Flutter, no pixel transfer
+      if (_ioSurfaceTextureId != null) {
+        final bool rendered =
+            await widget.bridge.engineGetFrameRenderedFlag();
+        if (rendered && mounted) {
+          await widget.bridge.notifyFrameAvailable(
+            textureId: _ioSurfaceTextureId!,
+          );
+          setState(() {
+            _lastFrameSerial += 1;
+          });
+        }
+        return;
+      }
+
+      // Legacy path: read pixels
       final EngineFrameData? frameData = await widget.bridge.engineReadFrame();
       if (frameData == null) {
         return;
@@ -279,7 +458,7 @@ class _EngineSurfaceState extends State<EngineSurface> {
     widget.onError?.call(message);
   }
 
-  Widget _buildTextureView() {
+  Widget _buildTextureView(int textureId) {
     final int width = _frameWidth > 0
         ? _frameWidth
         : (_surfaceWidth > 0 ? _surfaceWidth : 1);
@@ -292,7 +471,7 @@ class _EngineSurfaceState extends State<EngineSurface> {
         child: SizedBox(
           width: width.toDouble(),
           height: height.toDouble(),
-          child: Texture(textureId: _textureId!),
+          child: Texture(textureId: textureId),
         ),
       ),
     );
@@ -374,8 +553,16 @@ class _EngineSurfaceState extends State<EngineSurface> {
     return KeyEventResult.handled;
   }
 
+  String get _modeLabel {
+    if (_ioSurfaceTextureId != null) return 'iosurface(id:$_ioSurfaceId)';
+    if (_textureId != null) return 'texture';
+    return 'software';
+  }
+
   @override
   Widget build(BuildContext context) {
+    final int? activeTextureId = _ioSurfaceTextureId ?? _textureId;
+
     return AspectRatio(
       aspectRatio: 16 / 9,
       child: LayoutBuilder(
@@ -430,8 +617,8 @@ class _EngineSurfaceState extends State<EngineSurface> {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    if (_textureId != null)
-                      _buildTextureView()
+                    if (activeTextureId != null)
+                      _buildTextureView(activeTextureId)
                     else if (_frameImage == null)
                       const Center(
                         child: Text(
@@ -461,7 +648,7 @@ class _EngineSurfaceState extends State<EngineSurface> {
                           'surface:${_surfaceWidth}x$_surfaceHeight  '
                           'frame:${_frameWidth}x$_frameHeight  '
                           '#$_lastFrameSerial  '
-                          '${_textureId != null ? "texture" : "software"}',
+                          '$_modeLabel',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 12,

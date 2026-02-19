@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'engine/engine_bridge.dart';
@@ -11,7 +10,7 @@ void main() {
   runApp(const FlutterShellApp());
 }
 
-enum SurfaceRenderMode { texture, software }
+enum SurfaceRenderMode { iosurface, texture, software }
 
 class FlutterShellApp extends StatelessWidget {
   const FlutterShellApp({
@@ -73,7 +72,7 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage>
   bool _busy = false;
   bool _tickInFlight = false;
   bool _isTicking = false;
-  SurfaceRenderMode _surfaceMode = SurfaceRenderMode.texture;
+  SurfaceRenderMode _surfaceMode = SurfaceRenderMode.iosurface;
   bool _autoPausedByLifecycle = false;
   bool _resumeTickLoopAfterLifecyclePause = false;
   bool _lifecycleTransitionInFlight = false;
@@ -667,7 +666,11 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage>
     final Widget engineSurface = EngineSurface(
             bridge: _bridge,
             active: isSurfaceActive,
-            preferTexture: _surfaceMode == SurfaceRenderMode.texture,
+            surfaceMode: _surfaceMode == SurfaceRenderMode.iosurface
+                ? EngineSurfaceMode.iosurface
+                : _surfaceMode == SurfaceRenderMode.texture
+                    ? EngineSurfaceMode.texture
+                    : EngineSurfaceMode.software,
             onLog: (String message) {
               _appendLog('surface: $message');
             },
@@ -719,6 +722,10 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage>
         const SizedBox(height: 8),
         SegmentedButton<SurfaceRenderMode>(
           segments: const [
+            ButtonSegment<SurfaceRenderMode>(
+              value: SurfaceRenderMode.iosurface,
+              label: Text('iosurface'),
+            ),
             ButtonSegment<SurfaceRenderMode>(
               value: SurfaceRenderMode.texture,
               label: Text('texture'),
@@ -891,8 +898,6 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage>
         ),
       ],
     );
-    final bool pinNativeSurface = false;
-
     return Scaffold(
       appBar: AppBar(title: const Text('Krkr2 Flutter Shell')),
       body: Padding(
@@ -900,45 +905,18 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage>
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 680),
-            child: pinNativeSurface
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      surfaceSection,
-                      const SizedBox(height: 16),
-                      Expanded(
-                        child: ScrollConfiguration(
-                          behavior: ScrollConfiguration.of(context).copyWith(
-                            dragDevices: <PointerDeviceKind>{
-                              PointerDeviceKind.mouse,
-                            },
-                          ),
-                          child: SingleChildScrollView(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                infoSection,
-                                const SizedBox(height: 20),
-                                controlsSection,
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  )
-                : SingleChildScrollView(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        infoSection,
-                        const SizedBox(height: 20),
-                        surfaceSection,
-                        const SizedBox(height: 20),
-                        controlsSection,
-                      ],
-                    ),
-                  ),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  infoSection,
+                  const SizedBox(height: 20),
+                  surfaceSection,
+                  const SizedBox(height: 20),
+                  controlsSection,
+                ],
+              ),
+            ),
           ),
         ),
       ),

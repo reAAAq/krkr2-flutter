@@ -153,6 +153,35 @@ class _FakeEngineBridge implements EngineBridge {
     tickCalls += 1;
     return 0;
   }
+
+  @override
+  Future<int> engineSetRenderTargetIOSurface({
+    required int iosurfaceId,
+    required int width,
+    required int height,
+  }) async => 0;
+
+  @override
+  Future<bool> engineGetFrameRenderedFlag() async => false;
+
+  @override
+  Future<Map<String, dynamic>?> createIOSurfaceTexture({
+    required int width,
+    required int height,
+  }) async => null;
+
+  @override
+  Future<void> notifyFrameAvailable({required int textureId}) async {}
+
+  @override
+  Future<Map<String, dynamic>?> resizeIOSurfaceTexture({
+    required int textureId,
+    required int width,
+    required int height,
+  }) async => null;
+
+  @override
+  Future<void> disposeIOSurfaceTexture({required int textureId}) async {}
 }
 
 void main() {
