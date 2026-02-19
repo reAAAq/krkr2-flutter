@@ -10,6 +10,7 @@
 
 #include "ogl_common.h"
 #include <cstdint>
+#include <functional>
 
 namespace krkr {
 namespace gl {
@@ -83,6 +84,23 @@ void BlendResetToCache();
  * recreated or when switching contexts.
  */
 void InvalidateStateCache();
+
+// ---------------------------------------------------------------------------
+// Renderer recreated callback (for Android GL context loss recovery)
+// ---------------------------------------------------------------------------
+
+/**
+ * Register a callback to be invoked when the GL renderer is recreated
+ * (e.g. after Android GL context loss). Replaces the Cocos2d-x
+ * EVENT_RENDERER_RECREATED / EventListenerCustom mechanism.
+ */
+void OnRendererRecreated(std::function<void()> callback);
+
+/**
+ * Fire the renderer-recreated event. Called by the platform layer
+ * when the GL context has been recreated.
+ */
+void FireRendererRecreated();
 
 } // namespace gl
 } // namespace krkr

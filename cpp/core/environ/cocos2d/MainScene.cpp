@@ -983,6 +983,10 @@ public:
     void UpdateDrawBuffer(iTVPTexture2D *tex) override {
         if(!tex)
             return;
+        // [ANGLE Migration] Cocos2d-x Sprite texture bridging disabled.
+        // This code path (NativeView mode) will be removed in Phase 3.
+        // In Texture mode (Flutter), rendering goes through engine_tick() → glReadPixels.
+#if 0 // Disabled during ANGLE migration — Phase 3 will replace this entirely
         //		iTVPRenderManager *mgr = TVPGetRenderManager();
         // 		if (!mgr->IsSoftware()) {
         // 			static iTVPRenderMethod *method =
@@ -1027,6 +1031,7 @@ public:
             DrawSprite->setBlendFunc(BlendFunc::DISABLE);
             ResetDrawSprite();
         }
+#endif
     }
 
     tTJSNI_Window *GetWindow() { return TJSNativeInstance; }

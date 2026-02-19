@@ -10,6 +10,7 @@
 
 #include "krkr_gl.h"
 #include <algorithm>
+#include <vector>
 
 // Maximum number of texture units we track
 static constexpr int kMaxTextureUnits = 16;
@@ -140,6 +141,27 @@ void InvalidateStateCache() {
     }
     s_currentProgram = 0;
     s_enabledVertexAttribs = 0;
+}
+
+// ---------------------------------------------------------------------------
+// Renderer recreated callbacks
+// ---------------------------------------------------------------------------
+
+namespace {
+    std::vector<std::function<void()>> s_rendererRecreatedCallbacks;
+} // anonymous namespace
+
+void OnRendererRecreated(std::function<void()> callback) {
+    s_rendererRecreatedCallbacks.push_back(std::move(callback));
+}
+
+void FireRendererRecreated() {
+    // Invalidate all caches first
+    InvalidateStateCache();
+    // Then notify all registered listeners
+    for (auto& cb : s_rendererRecreatedCallbacks) {
+        cb();
+    }
 }
 
 } // namespace gl

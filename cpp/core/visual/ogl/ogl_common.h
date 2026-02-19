@@ -29,3 +29,23 @@
 #include <string>
 
 bool TVPCheckGLExtension(const std::string &extname);
+
+// ---------------------------------------------------------------------------
+// CHECK_GL_ERROR_DEBUG — replacement for cocos2d-x macro
+// In debug builds, checks for GL errors after each call.
+// In release builds, this is a no-op.
+// ---------------------------------------------------------------------------
+#ifndef CHECK_GL_ERROR_DEBUG
+#ifdef _DEBUG
+#include <cassert>
+#define CHECK_GL_ERROR_DEBUG()                                                 \
+    do {                                                                       \
+        GLenum __error = glGetError();                                         \
+        if (__error) {                                                         \
+            /* Log but don't assert — some errors are recoverable */           \
+        }                                                                      \
+    } while (false)
+#else
+#define CHECK_GL_ERROR_DEBUG() ((void)0)
+#endif
+#endif

@@ -54,6 +54,7 @@ public:
         iTVPTexture2D *tex = data.Texture;
         if(tex) {
             _sprite->setVisible(true);
+#if 0 // [ANGLE Migration] Disabled — Cocos2d-x texture bridging removed in Phase 1
             Texture2D *cctex = _sprite->getTexture();
             Texture2D *newtex = tex->GetAdapterTexture(cctex);
             float scalex, scaley;
@@ -74,6 +75,13 @@ public:
             _sprite->setPosition(left, 2);
             float r = laySize.height / tex->GetHeight();
             _sprite->setScale(r * scalex, r * scaley);
+#else
+            float scalex = 1.0f, scaley = 1.0f;
+            tex->GetScale(scalex, scaley);
+            _sprite->setPosition(left, 2);
+            float r = laySize.height / tex->GetHeight();
+            _sprite->setScale(r * scalex, r * scaley);
+#endif
             const char *prefix = tex->IsStatic() ? "static " : "";
             char tmp[64];
             sprintf(tmp, "%s[%d x %d] %.2fMB", prefix, (int)tex->GetWidth(),
