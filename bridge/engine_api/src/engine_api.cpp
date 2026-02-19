@@ -596,8 +596,14 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
   }
 
   // Drive one full frame (scene update + render + swap). In host mode
-  // this is required; calling Application->Run() alone can advance script
-  // and audio while leaving the window visually stale/black.
+  // we must call Application->Run() which processes messages, triggers
+  // scene composition, and invokes BasicDrawDevice::Show() →
+  // form->UpdateDrawBuffer() — the actual rendering path.
+  // TVPDrawSceneOnce() only restores GL state and calls SwapBuffer,
+  // which is insufficient.
+  if (::Application) {
+    ::Application->Run();
+  }
   ::TVPDrawSceneOnce(0);
 
   if (TVPTerminated) {

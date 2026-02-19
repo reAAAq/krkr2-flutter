@@ -23,7 +23,10 @@
 #include "Platform.h"
 #include "TVPWindow.h"
 #include "Application.h"
+#include "RenderManager.h"
 #include "krkr_egl_context.h"
+
+#include <GLES3/gl3.h>
 
 // ---------------------------------------------------------------------------
 // FlutterWindowLayer — concrete iWindowLayer for Flutter host mode.
@@ -120,10 +123,82 @@ public:
     }
 
     void UpdateDrawBuffer(iTVPTexture2D *tex) override {
-        // In Flutter mode, frame readback is done via engine_read_frame_rgba.
-        // This method is called by BasicDrawDevice after compositing.
-        // No additional work needed here — the framebuffer is already
-        // rendered in the EGL Pbuffer and will be read by the host.
+        // Blit the composited scene texture onto the EGL Pbuffer's default
+        // framebuffer so that glReadPixels (called later in engine_tick) can
+        // retrieve the rendered frame.
+        if (!tex) return;
+
+        const tjs_uint tw = tex->GetWidth();
+        const tjs_uint th = tex->GetHeight();
+        if (tw == 0 || th == 0) return;
+
+        // Read pixel data from the texture (CPU-side) and upload to
+        // the default framebuffer via glDrawPixels equivalent for GLES:
+        // bind default FBO, create a temp texture, draw a fullscreen quad.
+        EnsureBlitResources();
+
+        // Bind default framebuffer (EGL Pbuffer surface)
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+        auto& egl = krkr::GetEngineEGLContext();
+        const uint32_t fbW = egl.GetWidth();
+        const uint32_t fbH = egl.GetHeight();
+        glViewport(0, 0, static_cast<GLsizei>(fbW), static_cast<GLsizei>(fbH));
+
+        // Upload texture data to our blit texture
+        const tjs_int pitch = tex->GetPitch();
+        const void* pixelData = tex->GetPixelData();
+        if (!pixelData) {
+            // Fallback: read line by line
+            if (blit_pixel_buf_.size() < static_cast<size_t>(tw * th * 4)) {
+                blit_pixel_buf_.resize(tw * th * 4);
+            }
+            for (tjs_uint y = 0; y < th; ++y) {
+                const void* line = tex->GetScanLineForRead(y);
+                if (line) {
+                    std::memcpy(blit_pixel_buf_.data() + y * tw * 4, line, tw * 4);
+                }
+            }
+            pixelData = blit_pixel_buf_.data();
+        }
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, blit_texture_);
+        // Use GL_UNPACK_ROW_LENGTH if pitch differs from width*4
+        if (pitch != static_cast<tjs_int>(tw * 4)) {
+            glPixelStorei(GL_UNPACK_ROW_LENGTH, pitch / 4);
+        }
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
+                     static_cast<GLsizei>(tw), static_cast<GLsizei>(th),
+                     0, GL_RGBA, GL_UNSIGNED_BYTE, pixelData);
+        if (pitch != static_cast<tjs_int>(tw * 4)) {
+            glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+        }
+
+        // Draw fullscreen quad
+        glUseProgram(blit_program_);
+        glUniform1i(blit_tex_uniform_, 0);
+
+        glBindBuffer(GL_ARRAY_BUFFER, blit_vbo_);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float),
+                              (void*)0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float),
+                              (void*)(2 * sizeof(float)));
+
+        glDisable(GL_BLEND);
+        glDisable(GL_DEPTH_TEST);
+        glDisable(GL_SCISSOR_TEST);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+        glDisableVertexAttribArray(0);
+        glDisableVertexAttribArray(1);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        glUseProgram(0);
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        glFinish(); // Ensure rendering is complete before readback
     }
 
     void InvalidateClose() override {
@@ -180,6 +255,95 @@ public:
     TVPOverlayNode *GetPrimaryArea() override { return nullptr; }
 
 private:
+    void EnsureBlitResources() {
+        if (blit_program_ != 0) return;
+
+        // Vertex shader: fullscreen quad with flipped Y (OpenGL → top-down)
+        const char* vs_src = R"(#version 300 es
+            layout(location = 0) in vec2 aPos;
+            layout(location = 1) in vec2 aUV;
+            out vec2 vUV;
+            void main() {
+                gl_Position = vec4(aPos, 0.0, 1.0);
+                vUV = aUV;
+            }
+        )";
+
+        const char* fs_src = R"(#version 300 es
+            precision mediump float;
+            in vec2 vUV;
+            out vec4 fragColor;
+            uniform sampler2D uTex;
+            void main() {
+                fragColor = texture(uTex, vUV);
+            }
+        )";
+
+        auto compileShader = [](GLenum type, const char* src) -> GLuint {
+            GLuint s = glCreateShader(type);
+            glShaderSource(s, 1, &src, nullptr);
+            glCompileShader(s);
+            GLint ok = 0;
+            glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
+            if (!ok) {
+                char log[512];
+                glGetShaderInfoLog(s, sizeof(log), nullptr, log);
+                spdlog::error("Blit shader compile error: {}", log);
+            }
+            return s;
+        };
+
+        GLuint vs = compileShader(GL_VERTEX_SHADER, vs_src);
+        GLuint fs = compileShader(GL_FRAGMENT_SHADER, fs_src);
+
+        blit_program_ = glCreateProgram();
+        glAttachShader(blit_program_, vs);
+        glAttachShader(blit_program_, fs);
+        glLinkProgram(blit_program_);
+
+        GLint ok = 0;
+        glGetProgramiv(blit_program_, GL_LINK_STATUS, &ok);
+        if (!ok) {
+            char log[512];
+            glGetProgramInfoLog(blit_program_, sizeof(log), nullptr, log);
+            spdlog::error("Blit program link error: {}", log);
+        }
+
+        glDeleteShader(vs);
+        glDeleteShader(fs);
+
+        blit_tex_uniform_ = glGetUniformLocation(blit_program_, "uTex");
+
+        // Fullscreen quad: position (x,y) + texcoord (u,v)
+        // Y-flipped: top-left of texture → top-left of screen
+        // OpenGL NDC: bottom-left is (-1,-1), top-right is (1,1)
+        // Texture: (0,0) is top-left in krkr2 convention
+        const float quad[] = {
+            // pos        // uv
+            -1.f, -1.f,   0.f, 1.f,  // bottom-left  → tex bottom (v=1)
+             1.f, -1.f,   1.f, 1.f,  // bottom-right
+            -1.f,  1.f,   0.f, 0.f,  // top-left     → tex top (v=0)
+             1.f,  1.f,   1.f, 0.f,  // top-right
+        };
+
+        glGenBuffers(1, &blit_vbo_);
+        glBindBuffer(GL_ARRAY_BUFFER, blit_vbo_);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(quad), quad, GL_STATIC_DRAW);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+        // Create blit texture
+        glGenTextures(1, &blit_texture_);
+        glBindTexture(GL_TEXTURE_2D, blit_texture_);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        spdlog::info("FlutterWindowLayer: blit resources initialized (program={})",
+                     blit_program_);
+    }
+
     tTJSNI_Window *owner_;
     bool visible_;
     std::string caption_;
@@ -187,6 +351,13 @@ private:
     tjs_int height_;
     bool active_;
     bool closing_;
+
+    // Blit resources for rendering to EGL pbuffer
+    GLuint blit_program_ = 0;
+    GLuint blit_vbo_ = 0;
+    GLuint blit_texture_ = 0;
+    GLint  blit_tex_uniform_ = -1;
+    std::vector<uint8_t> blit_pixel_buf_;
 };
 
 // ---------------------------------------------------------------------------
