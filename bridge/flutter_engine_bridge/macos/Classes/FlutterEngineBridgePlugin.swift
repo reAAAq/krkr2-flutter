@@ -247,12 +247,27 @@ private final class EngineNativeSurfaceView: NSView {
       return sourceView
     }
 
-    // Prefer the deepest single-child chain under contentView. In practice the
-    // innermost view is usually the real GL render view and avoids letterboxing.
+    // Prefer the deepest single-child chain only when each child nearly fills
+    // its parent. This avoids selecting inset/letterboxed children that would
+    // produce top/bottom black bars after reparenting.
     var candidate = sourceView
     for _ in 0..<6 {
       guard candidate.subviews.count == 1, let child = candidate.subviews.first
       else {
+        break
+      }
+      let parentBounds = candidate.bounds
+      let childFrame = child.frame
+      let hasValidParentSize = parentBounds.width > 1 && parentBounds.height > 1
+      guard hasValidParentSize else {
+        break
+      }
+      let widthFill = childFrame.width / parentBounds.width
+      let heightFill = childFrame.height / parentBounds.height
+      let nearlyFillsParent =
+        widthFill >= 0.97 && widthFill <= 1.03 &&
+        heightFill >= 0.97 && heightFill <= 1.03
+      guard nearlyFillsParent else {
         break
       }
       candidate = child
