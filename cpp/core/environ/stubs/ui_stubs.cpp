@@ -198,9 +198,19 @@ public:
         if (pitch != static_cast<tjs_int>(tw * 4)) {
             glPixelStorei(GL_UNPACK_ROW_LENGTH, pitch / 4);
         }
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
-                     static_cast<GLsizei>(tw), static_cast<GLsizei>(th),
-                     0, GL_RGBA, GL_UNSIGNED_BYTE, pixelData);
+        // Use glTexSubImage2D when the texture size hasn't changed,
+        // avoiding per-frame texture memory reallocation.
+        if (blit_tex_w_ == tw && blit_tex_h_ == th) {
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0,
+                            static_cast<GLsizei>(tw), static_cast<GLsizei>(th),
+                            GL_RGBA, GL_UNSIGNED_BYTE, pixelData);
+        } else {
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
+                         static_cast<GLsizei>(tw), static_cast<GLsizei>(th),
+                         0, GL_RGBA, GL_UNSIGNED_BYTE, pixelData);
+            blit_tex_w_ = tw;
+            blit_tex_h_ = th;
+        }
         if (pitch != static_cast<tjs_int>(tw * 4)) {
             glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
         }
@@ -400,6 +410,8 @@ private:
     GLuint blit_program_ = 0;
     GLuint blit_vbo_ = 0;
     GLuint blit_texture_ = 0;
+    tjs_uint blit_tex_w_ = 0;   // Last allocated texture width
+    tjs_uint blit_tex_h_ = 0;   // Last allocated texture height
     GLint  blit_tex_uniform_ = -1;
     GLint  blit_flipy_uniform_ = -1;
     std::vector<uint8_t> blit_pixel_buf_;
