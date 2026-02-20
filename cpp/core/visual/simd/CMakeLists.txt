@@ -9,6 +9,8 @@ set(SIMD_SOURCE_FILES
     ${SIMD_PATH}/tvpgl_simd_arithmetic_blend.cpp
     ${SIMD_PATH}/tvpgl_simd_const_blend.cpp
     ${SIMD_PATH}/tvpgl_simd_premul_blend.cpp
+    ${SIMD_PATH}/tvpgl_simd_ps_blend.cpp
+    ${SIMD_PATH}/tvpgl_simd_ps_blend2.cpp
 )
 
 add_library(${PROJECT_NAME} STATIC ${SIMD_SOURCE_FILES})

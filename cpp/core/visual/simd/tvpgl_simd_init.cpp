@@ -63,6 +63,39 @@ void TVPAdditiveAlphaBlend_ao_hwy(tjs_uint32 *dest, const tjs_uint32 *src, tjs_i
 // Phase 2: AlphaColorMat
 void TVPAlphaColorMat_hwy(tjs_uint32 *dest, const tjs_uint32 color, tjs_int len);
 
+// Phase 3: Photoshop blend modes (16 types × 4 variants = 64 functions)
+// Part 1: Fully SIMD-able (8 modes × 4 variants = 32)
+#define DECLARE_PS_BLEND_4V(Name)                                             \
+    void TVPPs##Name##Blend_hwy(tjs_uint32 *dest, const tjs_uint32 *src,      \
+                                tjs_int len);                                  \
+    void TVPPs##Name##Blend_o_hwy(tjs_uint32 *dest, const tjs_uint32 *src,    \
+                                  tjs_int len, tjs_int opa);                   \
+    void TVPPs##Name##Blend_HDA_hwy(tjs_uint32 *dest, const tjs_uint32 *src,  \
+                                    tjs_int len);                              \
+    void TVPPs##Name##Blend_HDA_o_hwy(tjs_uint32 *dest, const tjs_uint32 *src,\
+                                      tjs_int len, tjs_int opa);
+
+DECLARE_PS_BLEND_4V(Alpha)
+DECLARE_PS_BLEND_4V(Add)
+DECLARE_PS_BLEND_4V(Sub)
+DECLARE_PS_BLEND_4V(Mul)
+DECLARE_PS_BLEND_4V(Screen)
+DECLARE_PS_BLEND_4V(Lighten)
+DECLARE_PS_BLEND_4V(Darken)
+DECLARE_PS_BLEND_4V(Diff)
+
+// Part 2: Special handling (8 modes × 4 variants = 32)
+DECLARE_PS_BLEND_4V(Overlay)
+DECLARE_PS_BLEND_4V(HardLight)
+DECLARE_PS_BLEND_4V(Exclusion)
+DECLARE_PS_BLEND_4V(SoftLight)
+DECLARE_PS_BLEND_4V(ColorDodge)
+DECLARE_PS_BLEND_4V(ColorBurn)
+DECLARE_PS_BLEND_4V(ColorDodge5)
+DECLARE_PS_BLEND_4V(Diff5)
+
+#undef DECLARE_PS_BLEND_4V
+
 }  // extern "C"
 
 void TVPGL_SIMD_Init() {
@@ -139,7 +172,38 @@ void TVPGL_SIMD_Init() {
     TVPAlphaColorMat = TVPAlphaColorMat_hwy;
 
     // =====================================================================
-    // TODO: Phase 3 - Photoshop blend modes (16 types × 4 variants = 64)
+    // Phase 3: Photoshop blend modes (16 types × 4 variants = 64)
+    // =====================================================================
+
+#define REGISTER_PS_BLEND_4V(Name)                                            \
+    TVPPs##Name##Blend       = TVPPs##Name##Blend_hwy;                        \
+    TVPPs##Name##Blend_HDA   = TVPPs##Name##Blend_HDA_hwy;                    \
+    TVPPs##Name##Blend_o     = TVPPs##Name##Blend_o_hwy;                      \
+    TVPPs##Name##Blend_HDA_o = TVPPs##Name##Blend_HDA_o_hwy;
+
+    // Part 1: Fully SIMD-optimized
+    REGISTER_PS_BLEND_4V(Alpha)
+    REGISTER_PS_BLEND_4V(Add)
+    REGISTER_PS_BLEND_4V(Sub)
+    REGISTER_PS_BLEND_4V(Mul)
+    REGISTER_PS_BLEND_4V(Screen)
+    REGISTER_PS_BLEND_4V(Lighten)
+    REGISTER_PS_BLEND_4V(Darken)
+    REGISTER_PS_BLEND_4V(Diff)
+
+    // Part 2: Overlay/HardLight/Exclusion (SIMD) + table-based (scalar with unified entry)
+    REGISTER_PS_BLEND_4V(Overlay)
+    REGISTER_PS_BLEND_4V(HardLight)
+    REGISTER_PS_BLEND_4V(Exclusion)
+    REGISTER_PS_BLEND_4V(SoftLight)
+    REGISTER_PS_BLEND_4V(ColorDodge)
+    REGISTER_PS_BLEND_4V(ColorBurn)
+    REGISTER_PS_BLEND_4V(ColorDodge5)
+    REGISTER_PS_BLEND_4V(Diff5)
+
+#undef REGISTER_PS_BLEND_4V
+
+    // =====================================================================
     // TODO: Phase 4 - Stretch/LinTrans/Blur/Misc
     // =====================================================================
 }
