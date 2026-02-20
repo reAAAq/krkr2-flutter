@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import 'engine/engine_bridge.dart';
 import 'engine/flutter_engine_bridge_adapter.dart';
@@ -45,7 +46,7 @@ class EngineBridgeHomePage extends StatefulWidget {
 }
 
 class _EngineBridgeHomePageState extends State<EngineBridgeHomePage>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   static const int _engineResultOk = 0;
   static const int _maxEventLogSize = 120;
   static const int _smokeTickIterations = 3;
@@ -68,7 +69,7 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage>
     text: '60',
   );
 
-  Timer? _tickTimer;
+  Ticker? _ticker;
   bool _busy = false;
   bool _tickInFlight = false;
   bool _isTicking = false;
@@ -538,21 +539,26 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage>
       _isTicking = true;
       _engineStatus = 'Ticking';
     });
-    _appendLog('Tick loop started (16ms interval)');
+    _appendLog('Tick loop started (vsync-driven)');
 
-    _tickTimer = Timer.periodic(const Duration(milliseconds: 16), (
-      timer,
-    ) async {
+    Duration lastElapsed = Duration.zero;
+    _ticker = createTicker((Duration elapsed) async {
       if (_tickInFlight) {
         return;
       }
+      // Compute the delta time since the last tick callback.
+      final int deltaMs = lastElapsed == Duration.zero
+          ? 16
+          : (elapsed - lastElapsed).inMilliseconds.clamp(1, 100);
+      lastElapsed = elapsed;
+
       _tickInFlight = true;
       try {
-        final int result = await _bridge.engineTick(deltaMs: 16);
+        final int result = await _bridge.engineTick(deltaMs: deltaMs);
         if (!mounted) return;
         final String error = _bridge.engineGetLastError();
         if (result != _engineResultOk) {
-          timer.cancel();
+          _ticker?.stop();
           setState(() {
             _isTicking = false;
             _engineStatus = 'Faulted';
@@ -585,11 +591,13 @@ class _EngineBridgeHomePageState extends State<EngineBridgeHomePage>
         _tickInFlight = false;
       }
     });
+    _ticker!.start();
   }
 
   void _stopTickLoop({bool updateStatus = true, bool notify = true}) {
-    _tickTimer?.cancel();
-    _tickTimer = null;
+    _ticker?.stop();
+    _ticker?.dispose();
+    _ticker = null;
 
     void updateFields() {
       _isTicking = false;

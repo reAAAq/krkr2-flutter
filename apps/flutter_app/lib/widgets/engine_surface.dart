@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 import '../engine/engine_bridge.dart';
@@ -34,7 +35,6 @@ class EngineSurface extends StatefulWidget {
     required this.bridge,
     required this.active,
     this.surfaceMode = EngineSurfaceMode.iosurface,
-    this.pollInterval = const Duration(milliseconds: 16),
     this.externalTickDriven = false,
     this.onLog,
     this.onError,
@@ -43,7 +43,6 @@ class EngineSurface extends StatefulWidget {
   final EngineBridge bridge;
   final bool active;
   final EngineSurfaceMode surfaceMode;
-  final Duration pollInterval;
 
   /// When true, the internal frame polling timer is disabled.
   /// The parent widget must call [EngineSurfaceState.pollFrame()] after each
@@ -58,7 +57,7 @@ class EngineSurface extends StatefulWidget {
 
 class EngineSurfaceState extends State<EngineSurface> {
   final FocusNode _focusNode = FocusNode(debugLabel: 'engine-surface-focus');
-  Timer? _frameTimer;
+  bool _vsyncScheduled = false;
   bool _frameInFlight = false;
   bool _textureInitInFlight = false;
   ui.Image? _frameImage;
@@ -102,7 +101,8 @@ class EngineSurfaceState extends State<EngineSurface> {
 
   @override
   void dispose() {
-    _frameTimer?.cancel();
+    // _vsyncScheduled will simply be ignored once disposed.
+    _vsyncScheduled = false;
     _frameImage?.dispose();
     unawaited(_disposeAllTextures());
     _focusNode.dispose();
@@ -116,15 +116,29 @@ class EngineSurfaceState extends State<EngineSurface> {
 
   void _reconcilePolling() {
     if (!widget.active || widget.externalTickDriven) {
-      _frameTimer?.cancel();
-      _frameTimer = null;
+      _vsyncScheduled = false;
       return;
     }
 
-    _frameTimer ??= Timer.periodic(widget.pollInterval, (_) {
-      unawaited(_pollFrame());
-    });
+    _scheduleVsyncPoll();
     unawaited(_pollFrame());
+  }
+
+  /// Schedule a single vsync-aligned frame callback.
+  /// This replaces Timer.periodic and aligns with Flutter's display refresh.
+  void _scheduleVsyncPoll() {
+    if (_vsyncScheduled || !widget.active || widget.externalTickDriven) {
+      return;
+    }
+    _vsyncScheduled = true;
+    SchedulerBinding.instance.scheduleFrameCallback((_) {
+      _vsyncScheduled = false;
+      if (!mounted || !widget.active || widget.externalTickDriven) {
+        return;
+      }
+      unawaited(_pollFrame());
+      _scheduleVsyncPoll();
+    });
   }
 
   /// Public entry point for the parent tick loop to drive frame polling.
