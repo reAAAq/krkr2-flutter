@@ -11,6 +11,9 @@ set(SIMD_SOURCE_FILES
     ${SIMD_PATH}/tvpgl_simd_premul_blend.cpp
     ${SIMD_PATH}/tvpgl_simd_ps_blend.cpp
     ${SIMD_PATH}/tvpgl_simd_ps_blend2.cpp
+    ${SIMD_PATH}/tvpgl_simd_convert.cpp
+    ${SIMD_PATH}/tvpgl_simd_misc.cpp
+    ${SIMD_PATH}/tvpgl_simd_blur.cpp
 )
 
 add_library(${PROJECT_NAME} STATIC ${SIMD_SOURCE_FILES})

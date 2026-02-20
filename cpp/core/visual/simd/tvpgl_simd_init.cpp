@@ -96,6 +96,42 @@ DECLARE_PS_BLEND_4V(Diff5)
 
 #undef DECLARE_PS_BLEND_4V
 
+// Phase 4: Convert functions
+void TVPConvertAdditiveAlphaToAlpha_hwy(tjs_uint32 *buf, tjs_int len);
+void TVPConvertAlphaToAdditiveAlpha_hwy(tjs_uint32 *buf, tjs_int len);
+void TVPConvert24BitTo32Bit_hwy(tjs_uint32 *dest, const tjs_uint8 *buf, tjs_int len);
+void TVPConvert32BitTo24Bit_hwy(tjs_uint8 *dest, const tjs_uint8 *buf, tjs_int len);
+void TVPReverseRGB_hwy(tjs_uint32 *dest, const tjs_uint32 *src, tjs_int len);
+
+// Phase 4: Misc functions
+void TVPDoGrayScale_hwy(tjs_uint32 *dest, tjs_int len);
+void TVPSwapLine32_hwy(tjs_uint32 *line1, tjs_uint32 *line2, tjs_int len);
+void TVPSwapLine8_hwy(tjs_uint8 *line1, tjs_uint8 *line2, tjs_int len);
+void TVPReverse32_hwy(tjs_uint32 *pixels, tjs_int len);
+void TVPReverse8_hwy(tjs_uint8 *pixels, tjs_int len);
+void TVPMakeAlphaFromKey_hwy(tjs_uint32 *dest, tjs_int len, tjs_uint32 key);
+void TVPCopyMask_hwy(tjs_uint32 *dest, const tjs_uint32 *src, tjs_int len);
+void TVPCopyColor_hwy(tjs_uint32 *dest, const tjs_uint32 *src, tjs_int len);
+void TVPFillColor_hwy(tjs_uint32 *dest, tjs_int len, tjs_uint32 color);
+void TVPFillMask_hwy(tjs_uint32 *dest, tjs_int len, tjs_uint32 mask);
+void TVPBindMaskToMain_hwy(tjs_uint32 *main, const tjs_uint8 *mask, tjs_int len);
+void TVPConstColorAlphaBlend_hwy(tjs_uint32 *dest, tjs_int len, tjs_uint32 color, tjs_int opa);
+void TVPRemoveConstOpacity_hwy(tjs_uint32 *dest, tjs_int len, tjs_int strength);
+
+// Phase 4: Blur functions
+void TVPAddSubVertSum16_hwy(tjs_uint16 *dest, const tjs_uint32 *addline, const tjs_uint32 *subline, tjs_int len);
+void TVPAddSubVertSum16_d_hwy(tjs_uint16 *dest, const tjs_uint32 *addline, const tjs_uint32 *subline, tjs_int len);
+void TVPAddSubVertSum32_hwy(tjs_uint32 *dest, const tjs_uint32 *addline, const tjs_uint32 *subline, tjs_int len);
+void TVPAddSubVertSum32_d_hwy(tjs_uint32 *dest, const tjs_uint32 *addline, const tjs_uint32 *subline, tjs_int len);
+void TVPDoBoxBlurAvg16_hwy(tjs_uint32 *dest, tjs_uint16 *sum, const tjs_uint16 *add, const tjs_uint16 *sub, tjs_int n, tjs_int len);
+void TVPDoBoxBlurAvg16_d_hwy(tjs_uint32 *dest, tjs_uint16 *sum, const tjs_uint16 *add, const tjs_uint16 *sub, tjs_int n, tjs_int len);
+void TVPDoBoxBlurAvg32_hwy(tjs_uint32 *dest, tjs_uint32 *sum, const tjs_uint32 *add, const tjs_uint32 *sub, tjs_int n, tjs_int len);
+void TVPDoBoxBlurAvg32_d_hwy(tjs_uint32 *dest, tjs_uint32 *sum, const tjs_uint32 *add, const tjs_uint32 *sub, tjs_int n, tjs_int len);
+void TVPChBlurMulCopy65_hwy(tjs_uint8 *dest, const tjs_uint8 *src, tjs_int len, tjs_int level);
+void TVPChBlurAddMulCopy65_hwy(tjs_uint8 *dest, const tjs_uint8 *src, tjs_int len, tjs_int level);
+void TVPChBlurMulCopy_hwy(tjs_uint8 *dest, const tjs_uint8 *src, tjs_int len, tjs_int level);
+void TVPChBlurAddMulCopy_hwy(tjs_uint8 *dest, const tjs_uint8 *src, tjs_int len, tjs_int level);
+
 }  // extern "C"
 
 void TVPGL_SIMD_Init() {
@@ -204,6 +240,48 @@ void TVPGL_SIMD_Init() {
 #undef REGISTER_PS_BLEND_4V
 
     // =====================================================================
-    // TODO: Phase 4 - Stretch/LinTrans/Blur/Misc
+    // Phase 4: Convert functions
     // =====================================================================
+    TVPConvertAdditiveAlphaToAlpha = TVPConvertAdditiveAlphaToAlpha_hwy;
+    TVPConvertAlphaToAdditiveAlpha = TVPConvertAlphaToAdditiveAlpha_hwy;
+    TVPConvert24BitTo32Bit         = TVPConvert24BitTo32Bit_hwy;
+    TVPConvert32BitTo24Bit         = TVPConvert32BitTo24Bit_hwy;
+    TVPReverseRGB                  = TVPReverseRGB_hwy;
+
+    // =====================================================================
+    // Phase 4: Misc functions
+    // =====================================================================
+    TVPDoGrayScale         = TVPDoGrayScale_hwy;
+    TVPSwapLine32          = TVPSwapLine32_hwy;
+    TVPSwapLine8           = TVPSwapLine8_hwy;
+    TVPReverse32           = TVPReverse32_hwy;
+    TVPReverse8            = TVPReverse8_hwy;
+    TVPMakeAlphaFromKey    = TVPMakeAlphaFromKey_hwy;
+    TVPCopyMask            = TVPCopyMask_hwy;
+    TVPCopyColor           = TVPCopyColor_hwy;
+    TVPFillColor           = TVPFillColor_hwy;
+    TVPFillMask            = TVPFillMask_hwy;
+    TVPBindMaskToMain      = TVPBindMaskToMain_hwy;
+    TVPConstColorAlphaBlend = TVPConstColorAlphaBlend_hwy;
+    TVPRemoveConstOpacity  = TVPRemoveConstOpacity_hwy;
+
+    // =====================================================================
+    // Phase 4: Blur functions
+    // =====================================================================
+    TVPAddSubVertSum16     = TVPAddSubVertSum16_hwy;
+    TVPAddSubVertSum16_d   = TVPAddSubVertSum16_d_hwy;
+    TVPAddSubVertSum32     = TVPAddSubVertSum32_hwy;
+    TVPAddSubVertSum32_d   = TVPAddSubVertSum32_d_hwy;
+    TVPDoBoxBlurAvg16      = TVPDoBoxBlurAvg16_hwy;
+    TVPDoBoxBlurAvg16_d    = TVPDoBoxBlurAvg16_d_hwy;
+    TVPDoBoxBlurAvg32      = TVPDoBoxBlurAvg32_hwy;
+    TVPDoBoxBlurAvg32_d    = TVPDoBoxBlurAvg32_d_hwy;
+    TVPChBlurMulCopy65     = TVPChBlurMulCopy65_hwy;
+    TVPChBlurAddMulCopy65  = TVPChBlurAddMulCopy65_hwy;
+    TVPChBlurMulCopy       = TVPChBlurMulCopy_hwy;
+    TVPChBlurAddMulCopy    = TVPChBlurAddMulCopy_hwy;
+
+    // Note: Stretch/LinTrans series not SIMD-ized (scatter-gather access
+    // pattern, low SIMD benefit). They remain using scalar implementations.
+    // UnivTrans/ApplyColorMap/AdjustGamma also remain scalar (table-dependent).
 }
