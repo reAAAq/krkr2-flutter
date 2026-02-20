@@ -34,6 +34,35 @@ void TVPSubBlend_HDA_hwy(tjs_uint32 *dest, const tjs_uint32 *src, tjs_int len);
 void TVPSubBlend_o_hwy(tjs_uint32 *dest, const tjs_uint32 *src, tjs_int len, tjs_int opa);
 void TVPSubBlend_HDA_o_hwy(tjs_uint32 *dest, const tjs_uint32 *src, tjs_int len, tjs_int opa);
 
+// Phase 2: Mul Blend (4 variants)
+void TVPMulBlend_hwy(tjs_uint32 *dest, const tjs_uint32 *src, tjs_int len);
+void TVPMulBlend_HDA_hwy(tjs_uint32 *dest, const tjs_uint32 *src, tjs_int len);
+void TVPMulBlend_o_hwy(tjs_uint32 *dest, const tjs_uint32 *src, tjs_int len, tjs_int opa);
+void TVPMulBlend_HDA_o_hwy(tjs_uint32 *dest, const tjs_uint32 *src, tjs_int len, tjs_int opa);
+
+// Phase 2: Screen Blend (4 variants)
+void TVPScreenBlend_hwy(tjs_uint32 *dest, const tjs_uint32 *src, tjs_int len);
+void TVPScreenBlend_HDA_hwy(tjs_uint32 *dest, const tjs_uint32 *src, tjs_int len);
+void TVPScreenBlend_o_hwy(tjs_uint32 *dest, const tjs_uint32 *src, tjs_int len, tjs_int opa);
+void TVPScreenBlend_HDA_o_hwy(tjs_uint32 *dest, const tjs_uint32 *src, tjs_int len, tjs_int opa);
+
+// Phase 2: Const Alpha Blend (4 variants)
+void TVPConstAlphaBlend_hwy(tjs_uint32 *dest, const tjs_uint32 *src, tjs_int len, tjs_int opa);
+void TVPConstAlphaBlend_HDA_hwy(tjs_uint32 *dest, const tjs_uint32 *src, tjs_int len, tjs_int opa);
+void TVPConstAlphaBlend_d_hwy(tjs_uint32 *dest, const tjs_uint32 *src, tjs_int len, tjs_int opa);
+void TVPConstAlphaBlend_a_hwy(tjs_uint32 *dest, const tjs_uint32 *src, tjs_int len, tjs_int opa);
+
+// Phase 2: Additive Alpha Blend (6 variants)
+void TVPAdditiveAlphaBlend_hwy(tjs_uint32 *dest, const tjs_uint32 *src, tjs_int len);
+void TVPAdditiveAlphaBlend_HDA_hwy(tjs_uint32 *dest, const tjs_uint32 *src, tjs_int len);
+void TVPAdditiveAlphaBlend_o_hwy(tjs_uint32 *dest, const tjs_uint32 *src, tjs_int len, tjs_int opa);
+void TVPAdditiveAlphaBlend_HDA_o_hwy(tjs_uint32 *dest, const tjs_uint32 *src, tjs_int len, tjs_int opa);
+void TVPAdditiveAlphaBlend_a_hwy(tjs_uint32 *dest, const tjs_uint32 *src, tjs_int len);
+void TVPAdditiveAlphaBlend_ao_hwy(tjs_uint32 *dest, const tjs_uint32 *src, tjs_int len, tjs_int opa);
+
+// Phase 2: AlphaColorMat
+void TVPAlphaColorMat_hwy(tjs_uint32 *dest, const tjs_uint32 color, tjs_int len);
+
 }  // extern "C"
 
 void TVPGL_SIMD_Init() {
@@ -47,7 +76,7 @@ void TVPGL_SIMD_Init() {
     // =====================================================================
     // Phase 2: Core alpha blend (4 of 8 variants)
     // Note: _d, _a, _do, _ao variants require dest-alpha table access,
-    //       will be implemented in a later phase.
+    //       deferred to Phase 2+ or Phase 3.
     // =====================================================================
     TVPAlphaBlend       = TVPAlphaBlend_hwy;
     TVPAlphaBlend_HDA   = TVPAlphaBlend_HDA_hwy;
@@ -71,13 +100,45 @@ void TVPGL_SIMD_Init() {
     TVPSubBlend_HDA_o = TVPSubBlend_HDA_o_hwy;
 
     // =====================================================================
-    // TODO: Phase 2 remaining
-    //   TVPConstAlphaBlend (4 variants)
-    //   TVPMulBlend (4 variants)
-    //   TVPScreenBlend (4 variants)
-    //   TVPAdditiveAlphaBlend (6 variants)
-    //   TVPAlphaColorMat
-    //
+    // Phase 2: Mul blend (4 variants)
+    // =====================================================================
+    TVPMulBlend       = TVPMulBlend_hwy;
+    TVPMulBlend_HDA   = TVPMulBlend_HDA_hwy;
+    TVPMulBlend_o     = TVPMulBlend_o_hwy;
+    TVPMulBlend_HDA_o = TVPMulBlend_HDA_o_hwy;
+
+    // =====================================================================
+    // Phase 2: Screen blend (4 variants)
+    // =====================================================================
+    TVPScreenBlend       = TVPScreenBlend_hwy;
+    TVPScreenBlend_HDA   = TVPScreenBlend_HDA_hwy;
+    TVPScreenBlend_o     = TVPScreenBlend_o_hwy;
+    TVPScreenBlend_HDA_o = TVPScreenBlend_HDA_o_hwy;
+
+    // =====================================================================
+    // Phase 2: Const alpha blend (4 variants)
+    // =====================================================================
+    TVPConstAlphaBlend     = TVPConstAlphaBlend_hwy;
+    TVPConstAlphaBlend_HDA = TVPConstAlphaBlend_HDA_hwy;
+    TVPConstAlphaBlend_d   = TVPConstAlphaBlend_d_hwy;
+    TVPConstAlphaBlend_a   = TVPConstAlphaBlend_a_hwy;
+
+    // =====================================================================
+    // Phase 2: Additive (pre-multiplied) alpha blend (6 variants)
+    // =====================================================================
+    TVPAdditiveAlphaBlend       = TVPAdditiveAlphaBlend_hwy;
+    TVPAdditiveAlphaBlend_HDA   = TVPAdditiveAlphaBlend_HDA_hwy;
+    TVPAdditiveAlphaBlend_o     = TVPAdditiveAlphaBlend_o_hwy;
+    TVPAdditiveAlphaBlend_HDA_o = TVPAdditiveAlphaBlend_HDA_o_hwy;
+    TVPAdditiveAlphaBlend_a     = TVPAdditiveAlphaBlend_a_hwy;
+    TVPAdditiveAlphaBlend_ao    = TVPAdditiveAlphaBlend_ao_hwy;
+
+    // =====================================================================
+    // Phase 2: AlphaColorMat
+    // =====================================================================
+    TVPAlphaColorMat = TVPAlphaColorMat_hwy;
+
+    // =====================================================================
     // TODO: Phase 3 - Photoshop blend modes (16 types × 4 variants = 64)
     // TODO: Phase 4 - Stretch/LinTrans/Blur/Misc
     // =====================================================================

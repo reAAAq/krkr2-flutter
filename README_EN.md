@@ -16,12 +16,10 @@
 **语言 / Language**: [中文](README.md) | English
 
 > 🙏 This project is a refactor based on [krkr2](https://github.com/2468785842/krkr2). Thanks to the original author for the contribution.
->
-> 📦 New repository: [KrKr2-Next](https://github.com/reAAAq/KrKr2-Next)
 
 ## Overview
 
-**krkr2-flutter** is a modernized rewrite of the KrKr2 emulator, designed to run visual novel games built with the **KiriKiri engine** (a.k.a. T Visual Presenter). It replaces all non-core engine components with the Flutter framework, bridging the native C++ engine via FFI / Platform Channels. The graphics layer is powered by [ANGLE](https://chromium.googlesource.com/angle/angle), which provides a unified abstraction supporting modern graphics APIs such as Metal, Vulkan, and Direct3D 11, enabling high-performance rendering across macOS, Windows, Linux, Android and more.
+**krkr2-flutter** is a modernized rewrite of the KrKr2 emulator, designed to run visual novel games built with the **KiriKiri engine** (a.k.a. T Visual Presenter). The KiriKiri engine was originally designed in the early 2000s, with its architecture and performance strategies tailored to the hardware of that era — single-core CPUs, limited memory, and fixed-function GPUs. This project preserves the engine's core compatibility while comprehensively modernizing the rendering pipeline, SIMD instruction sets, memory management, and script virtual machine to fully leverage today's multi-core CPUs, wide SIMD instruction sets, and programmable GPUs. It replaces all non-core engine components with the Flutter framework, bridging the native C++ engine via FFI / Platform Channels. The graphics layer is powered by [ANGLE](https://chromium.googlesource.com/angle/angle), which provides a unified abstraction supporting modern graphics APIs such as Metal, Vulkan, and Direct3D 11, enabling high-performance rendering across macOS, Windows, Linux, Android and more.
 
 ## Current Progress
 
@@ -75,6 +73,20 @@ krkr2/
 | Linux | 📋 Planned | Plugin skeleton created, ANGLE Vulkan/Desktop GL backend pending adaptation |
 | Android | 📋 Planned | Legacy Android code pending migration |
 | Game Compatibility Testing | 📋 Planned | Pending stable multi-platform rendering |
+
+## Engine Performance Optimization
+
+| Priority | Task | Status |
+|----------|------|--------|
+| P0 | Pixel Blend SIMD ([Highway](https://github.com/google/highway)) | 🔨 In Progress |
+| P0 | Full GPU Compositing Pipeline | 📋 Planned |
+| P0 | TJS2 VM Interpreter (computed goto) | 📋 Planned |
+| P1 | Event System Refactor (lock-free queue) | 📋 Planned |
+| P1 | Image Loading Thread Pool | 📋 Planned |
+| P1 | tTJSVariant Fast Path | 📋 Planned |
+| P2 | RefCount → Smart Pointers | 📋 Planned |
+| P2 | Custom Containers → Modern | 📋 Planned |
+| P2 | XP3 Archive zstd Support | 📋 Planned |
 
 ## License
 

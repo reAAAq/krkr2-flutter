@@ -16,12 +16,10 @@
 **语言 / Language**: 中文 | [English](README_EN.md)
 
 > 🙏 本项目基于 [krkr2](https://github.com/2468785842/krkr2) 重构，感谢原作者的贡献。
->
-> 📦 新仓库地址：[KrKr2-Next](https://github.com/reAAAq/KrKr2-Next)
 
 ## 简介
 
-**krkr2-flutter** 是 KrKr2 模拟器的现代化重构版本，用于运行基于 **KiriKiri 引擎**（又称 T Visual Presenter）开发的视觉小说游戏。使用 Flutter 框架替换所有非核心引擎组件，通过 FFI/Platform Channel 桥接原生 C++ 引擎，并借助 [ANGLE](https://chromium.googlesource.com/angle/angle) 图形抽象层支持 Metal、Vulkan、Direct3D 11 等现代图形 API，实现跨 macOS、Windows、Linux、Android 等平台的高性能渲染。
+**krkr2-flutter** 是 KrKr2 模拟器的现代化重构版本，用于运行基于 **KiriKiri 引擎**（又称 T Visual Presenter）开发的视觉小说游戏。KiriKiri 引擎最初设计于 21 世纪初，其架构和性能策略基于当时的硬件特性——单核 CPU、有限内存、固定功能 GPU。本项目在保留引擎核心兼容性的同时，对渲染管线、SIMD 指令集、内存管理、脚本虚拟机等模块进行全面现代化改造，以充分利用当今多核 CPU、宽 SIMD 指令集和可编程 GPU 的能力。使用 Flutter 框架替换所有非核心引擎组件，通过 FFI/Platform Channel 桥接原生 C++ 引擎，并借助 [ANGLE](https://chromium.googlesource.com/angle/angle) 图形抽象层支持 Metal、Vulkan、Direct3D 11 等现代图形 API，实现跨 macOS、Windows、Linux、Android 等平台的高性能渲染。
 
 ## 当前进展
 
@@ -75,6 +73,20 @@ krkr2/
 | Linux 平台 | 📋 计划中 | Plugin 骨架已创建，ANGLE Vulkan/Desktop GL 后端待适配 |
 | Android 平台 | 📋 计划中 | 原有 Android 代码待迁移整合 |
 | 游戏兼容性测试 | 📋 计划中 | 待多平台渲染稳定后进行 |
+
+## 引擎性能优化
+
+| 优先级 | 任务 | 状态 |
+|--------|------|------|
+| P0 | 像素混合 SIMD 化 ([Highway](https://github.com/google/highway)) | 🔨 进行中 |
+| P0 | 全 GPU 合成渲染管线 | 📋 计划中 |
+| P0 | TJS2 VM 解释器优化 (computed goto) | 📋 计划中 |
+| P1 | 事件系统重构 (lock-free 队列) | 📋 计划中 |
+| P1 | 图像加载线程池化 | 📋 计划中 |
+| P1 | tTJSVariant 快速路径特化 | 📋 计划中 |
+| P2 | 引用计数 → 智能指针 | 📋 计划中 |
+| P2 | 自定义容器 → 现代容器 | 📋 计划中 |
+| P2 | XP3 归档 zstd 支持 | 📋 计划中 |
 
 ## 许可证
 
