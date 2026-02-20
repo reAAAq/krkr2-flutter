@@ -299,8 +299,8 @@ bool EGLContextManager::AttachIOSurface(uint32_t iosurface_id,
     GLuint tex = 0;
     glGenTextures(1, &tex);
     glBindTexture(glTextureTarget, tex);
-    glTexParameteri(glTextureTarget, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(glTextureTarget, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(glTextureTarget, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(glTextureTarget, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
     // Bind the pbuffer to the texture (this connects the IOSurface content)
     EGLBoolean bindResult = eglBindTexImage(display_, pbuffer, EGL_BACK_BUFFER);

@@ -503,7 +503,10 @@ class EngineSurfaceState extends State<EngineSurface> {
       child: SizedBox(
         width: logicalW,
         height: logicalH,
-        child: Texture(textureId: textureId),
+        child: Texture(
+          textureId: textureId,
+          filterQuality: FilterQuality.medium,
+        ),
       ),
     );
   }
@@ -669,7 +672,7 @@ class EngineSurfaceState extends State<EngineSurface> {
                     RawImage(
                       image: _frameImage,
                       fit: BoxFit.contain,
-                      filterQuality: FilterQuality.none,
+                      filterQuality: FilterQuality.medium,
                     ),
                 ],
               ),
