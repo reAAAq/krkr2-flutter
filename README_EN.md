@@ -78,8 +78,8 @@ krkr2/
 
 | Priority | Task | Status |
 |----------|------|--------|
-| P0 | Pixel Blend SIMD ([Highway](https://github.com/google/highway)) | 🔨 In Progress |
-| P0 | Full GPU Compositing Pipeline | 📋 Planned |
+| P0 | Pixel Blend SIMD ([Highway](https://github.com/google/highway)) | ✅ Done |
+| P0 | Full GPU Compositing Pipeline | 🔨 In Progress |
 | P0 | TJS2 VM Interpreter (computed goto) | 📋 Planned |
 | P1 | Event System Refactor (lock-free queue) | 📋 Planned |
 | P1 | Image Loading Thread Pool | 📋 Planned |

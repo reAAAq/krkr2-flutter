@@ -78,8 +78,8 @@ krkr2/
 
 | 优先级 | 任务 | 状态 |
 |--------|------|------|
-| P0 | 像素混合 SIMD 化 ([Highway](https://github.com/google/highway)) | 🔨 进行中 |
-| P0 | 全 GPU 合成渲染管线 | 📋 计划中 |
+| P0 | 像素混合 SIMD 化 ([Highway](https://github.com/google/highway)) | ✅ 完成 |
+| P0 | 全 GPU 合成渲染管线 | � 进行中 |
 | P0 | TJS2 VM 解释器优化 (computed goto) | 📋 计划中 |
 | P1 | 事件系统重构 (lock-free 队列) | 📋 计划中 |
 | P1 | 图像加载线程池化 | 📋 计划中 |
