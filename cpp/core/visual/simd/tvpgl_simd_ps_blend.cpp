@@ -42,6 +42,7 @@ static HWY_INLINE hn::Vec<hn::ScalableTag<uint8_t>> PsApplyAlpha(
 
     const hn::Repartition<uint16_t, decltype(d8)> d16;
     const auto half = hn::Half<decltype(d8)>();
+    const auto v255 = hn::Set(d16, static_cast<uint16_t>(255));
 
     auto s_lo = hn::PromoteTo(d16, hn::LowerHalf(half, vs_blended));
     auto d_lo = hn::PromoteTo(d16, hn::LowerHalf(half, vd));
@@ -51,8 +52,11 @@ static HWY_INLINE hn::Vec<hn::ScalableTag<uint8_t>> PsApplyAlpha(
     auto d_hi = hn::PromoteUpperTo(d16, vd);
     auto a_hi = hn::PromoteUpperTo(d16, va);
 
-    auto r_lo = hn::Add(d_lo, hn::ShiftRight<8>(hn::Mul(hn::Sub(s_lo, d_lo), a_lo)));
-    auto r_hi = hn::Add(d_hi, hn::ShiftRight<8>(hn::Mul(hn::Sub(s_hi, d_hi), a_hi)));
+    // result = (s * a + d * (255 - a)) >> 8, all unsigned, no overflow
+    auto inv_a_lo = hn::Sub(v255, a_lo);
+    auto inv_a_hi = hn::Sub(v255, a_hi);
+    auto r_lo = hn::ShiftRight<8>(hn::Add(hn::Mul(s_lo, a_lo), hn::Mul(d_lo, inv_a_lo)));
+    auto r_hi = hn::ShiftRight<8>(hn::Add(hn::Mul(s_hi, a_hi), hn::Mul(d_hi, inv_a_hi)));
 
     return hn::OrderedDemote2To(d8, r_lo, r_hi);
 }

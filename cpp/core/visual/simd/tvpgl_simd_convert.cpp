@@ -28,26 +28,17 @@ namespace hn = hwy::HWY_NAMESPACE;
 // =========================================================================
 // TVPConvertAdditiveAlphaToAlpha
 // Pre-multiplied → straight alpha
-// For each pixel: if alpha > 0, ch = min(ch * 255 / alpha, 255)
+// Uses TVPDivTable lookup to match original C implementation exactly.
+// TVPDivTable[(alpha << 8) + channel] = min(channel * 255 / alpha, 255)
 // =========================================================================
 void ConvertAdditiveAlphaToAlpha_HWY(tjs_uint32 *buf, tjs_int len) {
-    // This involves per-pixel division by alpha, not easily vectorizable.
-    // Use scalar implementation.
     for (tjs_int i = 0; i < len; i++) {
         tjs_uint32 px = buf[i];
-        tjs_uint32 a = px >> 24;
-        if (a == 0) {
-            buf[i] = 0;
-        } else if (a < 255) {
-            tjs_uint32 r = ((px >> 16) & 0xff) * 255 / a;
-            tjs_uint32 g = ((px >> 8) & 0xff) * 255 / a;
-            tjs_uint32 b = (px & 0xff) * 255 / a;
-            if (r > 255) r = 255;
-            if (g > 255) g = 255;
-            if (b > 255) b = 255;
-            buf[i] = (a << 24) | (r << 16) | (g << 8) | b;
-        }
-        // a == 255: no change needed
+        const tjs_uint8 *t = ((px >> 16) & 0xff00) + ::TVPDivTable;
+        buf[i] = (px & 0xff000000) +
+                 (t[(px >> 16) & 0xff] << 16) +
+                 (t[(px >> 8) & 0xff] << 8) +
+                 (t[px & 0xff]);
     }
 }
 

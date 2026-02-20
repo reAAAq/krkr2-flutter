@@ -2,15 +2,24 @@
  * KrKr2 Engine - Highway SIMD Blur Functions
  *
  * Implements blur-related functions:
- *   TVPAddSubVertSum16/16_d/32/32_d - vertical sum add/subtract
- *   TVPDoBoxBlurAvg16/16_d/32/32_d - box blur averaging
+ *   TVPAddSubVertSum16/16_d/32/32_d - vertical sum add/subtract (SIMD)
+ *   TVPDoBoxBlurAvg16/16_d/32/32_d - box blur averaging (scalar, sequential)
  *   TVPChBlurMulCopy65/AddMulCopy65/MulCopy/AddMulCopy - channel blur
  *
  * Phase 4 implementation.
+ * FIX: DoBoxBlurAvg - sum[] is a 4-element running accumulator, not per-pixel.
+ *      Output before update. Added half_n rounding.
+ * FIX: DoBoxBlurAvg16_d uses TVPDivTable for alpha-aware output.
+ * FIX: ChBlurMulCopy65 - correct formula: dest = min(src*level >> 18, 255)
+ *      ChBlurAddMulCopy65: dest = min(dest + src*level >> 18, 255)
  */
 
 #include "tjsTypes.h"
 #include "tvpgl.h"
+
+extern "C" {
+extern tjs_uint8 TVPDivTable[256 * 256];
+}
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "tvpgl_simd_blur.cpp"
@@ -24,23 +33,18 @@ namespace HWY_NAMESPACE {
 namespace hn = hwy::HWY_NAMESPACE;
 
 // =========================================================================
-// TVPAddSubVertSum16: dest[i] += addline[i] - subline[i] (in u16 per channel)
-// Each u32 pixel is split into 4 channels accumulated in u16 arrays
+// TVPAddSubVertSum16: dest[ch] += addline_ch - subline_ch for all channels
 // =========================================================================
 void AddSubVertSum16_HWY(tjs_uint16 *dest, const tjs_uint32 *addline,
                           const tjs_uint32 *subline, tjs_int len) {
     const hn::ScalableTag<uint16_t> d16;
     const hn::ScalableTag<uint8_t> d8;
     const size_t N16 = hn::Lanes(d16);
-    // len is in pixels; each pixel produces 4 u16 channel values
-    // so dest has len*4 entries
-    tjs_int pixel_count = len;
-    tjs_int ch_count = pixel_count * 4;
+    tjs_int ch_count = len * 4;
 
     tjs_int i = 0;
     for (; i + static_cast<tjs_int>(N16) <= ch_count; i += N16) {
         auto vd = hn::LoadU(d16, dest + i);
-        // Load add/sub as bytes and promote
         auto va8 = hn::LoadU(d8, reinterpret_cast<const uint8_t*>(addline) + i);
         auto vs8 = hn::LoadU(d8, reinterpret_cast<const uint8_t*>(subline) + i);
         auto va = hn::PromoteTo(d16, hn::LowerHalf(hn::Half<decltype(d8)>(), va8));
@@ -54,10 +58,8 @@ void AddSubVertSum16_HWY(tjs_uint16 *dest, const tjs_uint32 *addline,
     }
 }
 
-// TVPAddSubVertSum16_d: same but dest alpha channel separate handling
 void AddSubVertSum16_d_HWY(tjs_uint16 *dest, const tjs_uint32 *addline,
                             const tjs_uint32 *subline, tjs_int len) {
-    // Same as non-_d version for now; alpha handled in box blur avg
     AddSubVertSum16_HWY(dest, addline, subline, len);
 }
 
@@ -75,8 +77,6 @@ void AddSubVertSum32_HWY(tjs_uint32 *dest, const tjs_uint32 *addline,
     tjs_int i = 0;
     for (; i + static_cast<tjs_int>(N32) <= ch_count; i += N32) {
         auto vd = hn::LoadU(d32, dest + i);
-        // Need to load N32 bytes and promote to u32
-        // Load as u8, promote to u16, then to u32
         auto va_u8 = hn::LoadU(d8, reinterpret_cast<const uint8_t*>(addline) + i);
         auto vs_u8 = hn::LoadU(d8, reinterpret_cast<const uint8_t*>(subline) + i);
 
@@ -102,37 +102,50 @@ void AddSubVertSum32_d_HWY(tjs_uint32 *dest, const tjs_uint32 *addline,
 
 // =========================================================================
 // TVPDoBoxBlurAvg16: box blur horizontal pass with 16-bit accumulators
-// Updates running sum and divides by n to get average
+// sum[] is a 4-element running accumulator (B, G, R, A).
+// For each pixel: output = (sum + half_n) / n, then update sum.
 // =========================================================================
 void DoBoxBlurAvg16_HWY(tjs_uint32 *dest, tjs_uint16 *sum,
                          const tjs_uint16 *add, const tjs_uint16 *sub,
                          tjs_int n, tjs_int len) {
-    // This is a sequential scan (running sum), hard to parallelize
-    // Use scalar loop with optimized per-pixel processing
-    tjs_uint32 rcp = (1 << 16) / n;  // reciprocal approximation
+    tjs_int rcp = (1 << 16) / n;
+    tjs_int half_n = n >> 1;
 
     for (tjs_int i = 0; i < len; i++) {
-        // Update running sums for 4 channels
-        tjs_int idx = i * 4;
-        sum[idx + 0] += add[idx + 0] - sub[idx + 0];
-        sum[idx + 1] += add[idx + 1] - sub[idx + 1];
-        sum[idx + 2] += add[idx + 2] - sub[idx + 2];
-        sum[idx + 3] += add[idx + 3] - sub[idx + 3];
+        // Output FIRST using current sum (with rounding)
+        dest[i] = (((sum[0] + half_n) * rcp >> 16)) +
+                  (((sum[1] + half_n) * rcp >> 16) << 8) +
+                  (((sum[2] + half_n) * rcp >> 16) << 16) +
+                  (((sum[3] + half_n) * rcp >> 16) << 24);
 
-        // Compute average: channel / n ≈ channel * rcp >> 16
-        tjs_uint32 b = (sum[idx + 0] * rcp) >> 16;
-        tjs_uint32 g = (sum[idx + 1] * rcp) >> 16;
-        tjs_uint32 r = (sum[idx + 2] * rcp) >> 16;
-        tjs_uint32 a = (sum[idx + 3] * rcp) >> 16;
-
-        dest[i] = (a << 24) | (r << 16) | (g << 8) | b;
+        // THEN update running sum
+        sum[0] += add[i * 4 + 0] - sub[i * 4 + 0];
+        sum[1] += add[i * 4 + 1] - sub[i * 4 + 1];
+        sum[2] += add[i * 4 + 2] - sub[i * 4 + 2];
+        sum[3] += add[i * 4 + 3] - sub[i * 4 + 3];
     }
 }
 
+// TVPDoBoxBlurAvg16_d: alpha-aware version using TVPDivTable
 void DoBoxBlurAvg16_d_HWY(tjs_uint32 *dest, tjs_uint16 *sum,
                             const tjs_uint16 *add, const tjs_uint16 *sub,
                             tjs_int n, tjs_int len) {
-    DoBoxBlurAvg16_HWY(dest, sum, add, sub, n, len);
+    tjs_int rcp = (1 << 16) / n;
+    tjs_int half_n = n >> 1;
+
+    for (tjs_int i = 0; i < len; i++) {
+        tjs_int a = ((sum[3] + half_n) * rcp >> 16);
+        tjs_uint8 *t = ::TVPDivTable + (a << 8);
+        dest[i] = (t[(sum[0] + half_n) * rcp >> 16]) +
+                  (t[(sum[1] + half_n) * rcp >> 16] << 8) +
+                  (t[(sum[2] + half_n) * rcp >> 16] << 16) +
+                  (a << 24);
+
+        sum[0] += add[i * 4 + 0] - sub[i * 4 + 0];
+        sum[1] += add[i * 4 + 1] - sub[i * 4 + 1];
+        sum[2] += add[i * 4 + 2] - sub[i * 4 + 2];
+        sum[3] += add[i * 4 + 3] - sub[i * 4 + 3];
+    }
 }
 
 // TVPDoBoxBlurAvg32: same with 32-bit accumulators
@@ -140,76 +153,86 @@ void DoBoxBlurAvg32_HWY(tjs_uint32 *dest, tjs_uint32 *sum,
                          const tjs_uint32 *add, const tjs_uint32 *sub,
                          tjs_int n, tjs_int len) {
     tjs_uint64 rcp = ((tjs_uint64)1 << 32) / n;
+    tjs_int half_n = n >> 1;
 
     for (tjs_int i = 0; i < len; i++) {
-        tjs_int idx = i * 4;
-        sum[idx + 0] += add[idx + 0] - sub[idx + 0];
-        sum[idx + 1] += add[idx + 1] - sub[idx + 1];
-        sum[idx + 2] += add[idx + 2] - sub[idx + 2];
-        sum[idx + 3] += add[idx + 3] - sub[idx + 3];
-
-        tjs_uint32 b = static_cast<tjs_uint32>(((tjs_uint64)sum[idx + 0] * rcp) >> 32);
-        tjs_uint32 g = static_cast<tjs_uint32>(((tjs_uint64)sum[idx + 1] * rcp) >> 32);
-        tjs_uint32 r = static_cast<tjs_uint32>(((tjs_uint64)sum[idx + 2] * rcp) >> 32);
-        tjs_uint32 a = static_cast<tjs_uint32>(((tjs_uint64)sum[idx + 3] * rcp) >> 32);
+        tjs_uint32 b = static_cast<tjs_uint32>(((tjs_uint64)(sum[0] + half_n) * rcp) >> 32);
+        tjs_uint32 g = static_cast<tjs_uint32>(((tjs_uint64)(sum[1] + half_n) * rcp) >> 32);
+        tjs_uint32 r = static_cast<tjs_uint32>(((tjs_uint64)(sum[2] + half_n) * rcp) >> 32);
+        tjs_uint32 a = static_cast<tjs_uint32>(((tjs_uint64)(sum[3] + half_n) * rcp) >> 32);
 
         dest[i] = (a << 24) | (r << 16) | (g << 8) | b;
+
+        sum[0] += add[i * 4 + 0] - sub[i * 4 + 0];
+        sum[1] += add[i * 4 + 1] - sub[i * 4 + 1];
+        sum[2] += add[i * 4 + 2] - sub[i * 4 + 2];
+        sum[3] += add[i * 4 + 3] - sub[i * 4 + 3];
     }
 }
 
 void DoBoxBlurAvg32_d_HWY(tjs_uint32 *dest, tjs_uint32 *sum,
                             const tjs_uint32 *add, const tjs_uint32 *sub,
                             tjs_int n, tjs_int len) {
-    DoBoxBlurAvg32_HWY(dest, sum, add, sub, n, len);
+    tjs_uint64 rcp = ((tjs_uint64)1 << 32) / n;
+    tjs_int half_n = n >> 1;
+
+    for (tjs_int i = 0; i < len; i++) {
+        tjs_int a = static_cast<tjs_int>(((tjs_uint64)(sum[3] + half_n) * rcp) >> 32);
+        tjs_uint8 *t = ::TVPDivTable + (a << 8);
+
+        tjs_uint32 b_avg = static_cast<tjs_uint32>(((tjs_uint64)(sum[0] + half_n) * rcp) >> 32);
+        tjs_uint32 g_avg = static_cast<tjs_uint32>(((tjs_uint64)(sum[1] + half_n) * rcp) >> 32);
+        tjs_uint32 r_avg = static_cast<tjs_uint32>(((tjs_uint64)(sum[2] + half_n) * rcp) >> 32);
+
+        dest[i] = t[b_avg] + (t[g_avg] << 8) + (t[r_avg] << 16) + (a << 24);
+
+        sum[0] += add[i * 4 + 0] - sub[i * 4 + 0];
+        sum[1] += add[i * 4 + 1] - sub[i * 4 + 1];
+        sum[2] += add[i * 4 + 2] - sub[i * 4 + 2];
+        sum[3] += add[i * 4 + 3] - sub[i * 4 + 3];
+    }
 }
 
 // =========================================================================
-// TVPChBlurMulCopy65: channel blur multiply-copy (65-level)
-// dest[i] = dest[i] + src[i] * level >> 8
+// TVPChBlurMulCopy65: dest = min(src * level >> 18, 255)  (overwrite)
 // =========================================================================
 void ChBlurMulCopy65_HWY(tjs_uint8 *dest, const tjs_uint8 *src,
                           tjs_int len, tjs_int level) {
-    const hn::ScalableTag<uint8_t> d8;
-    const hn::Repartition<uint16_t, decltype(d8)> d16;
-    const size_t N = hn::Lanes(d8);
-    const auto vlevel16 = hn::Set(d16, static_cast<uint16_t>(level));
-
-    tjs_int i = 0;
-    for (; i + static_cast<tjs_int>(N) <= len; i += N) {
-        auto vs = hn::LoadU(d8, src + i);
-        auto vd = hn::LoadU(d8, dest + i);
-
-        const auto half = hn::Half<decltype(d8)>();
-        auto s_lo = hn::PromoteTo(d16, hn::LowerHalf(half, vs));
-        auto s_hi = hn::PromoteUpperTo(d16, vs);
-        auto d_lo = hn::PromoteTo(d16, hn::LowerHalf(half, vd));
-        auto d_hi = hn::PromoteUpperTo(d16, vd);
-
-        auto r_lo = hn::Add(d_lo, hn::ShiftRight<8>(hn::Mul(s_lo, vlevel16)));
-        auto r_hi = hn::Add(d_hi, hn::ShiftRight<8>(hn::Mul(s_hi, vlevel16)));
-
-        auto result = hn::OrderedDemote2To(d8, r_lo, r_hi);
-        hn::StoreU(result, d8, dest + i);
-    }
-    for (; i < len; i++) {
-        dest[i] = static_cast<tjs_uint8>(dest[i] + ((src[i] * level) >> 8));
+    for (tjs_int i = 0; i < len; i++) {
+        tjs_int a = (src[i] * level) >> 18;
+        if (a >= 255) a = 255;
+        dest[i] = static_cast<tjs_uint8>(a);
     }
 }
 
+// TVPChBlurAddMulCopy65: dest = min(dest + src * level >> 18, 255) (accumulate + saturate)
 void ChBlurAddMulCopy65_HWY(tjs_uint8 *dest, const tjs_uint8 *src,
                               tjs_int len, tjs_int level) {
-    ChBlurMulCopy65_HWY(dest, src, len, level);
+    for (tjs_int i = 0; i < len; i++) {
+        tjs_int a = dest[i] + (src[i] * level >> 18);
+        if (a >= 255) a = 255;
+        dest[i] = static_cast<tjs_uint8>(a);
+    }
 }
 
-// TVPChBlurMulCopy: same but 256-level
+// TVPChBlurMulCopy: 256-level version, dest = min(src * level >> 8, 255) (overwrite)
 void ChBlurMulCopy_HWY(tjs_uint8 *dest, const tjs_uint8 *src,
                         tjs_int len, tjs_int level) {
-    ChBlurMulCopy65_HWY(dest, src, len, level);
+    for (tjs_int i = 0; i < len; i++) {
+        tjs_int a = (src[i] * level) >> 8;
+        if (a >= 255) a = 255;
+        dest[i] = static_cast<tjs_uint8>(a);
+    }
 }
 
+// TVPChBlurAddMulCopy: 256-level version, dest = min(dest + src * level >> 8, 255)
 void ChBlurAddMulCopy_HWY(tjs_uint8 *dest, const tjs_uint8 *src,
                             tjs_int len, tjs_int level) {
-    ChBlurMulCopy65_HWY(dest, src, len, level);
+    for (tjs_int i = 0; i < len; i++) {
+        tjs_int a = dest[i] + (src[i] * level >> 8);
+        if (a >= 255) a = 255;
+        dest[i] = static_cast<tjs_uint8>(a);
+    }
 }
 
 }  // namespace HWY_NAMESPACE

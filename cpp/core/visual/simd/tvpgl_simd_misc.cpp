@@ -243,9 +243,7 @@ void ConstColorAlphaBlend_HWY(tjs_uint32 *dest, tjs_int len,
     const hn::ScalableTag<uint8_t> d8;
     const hn::Repartition<uint16_t, decltype(d8)> d16;
     const size_t N_PIXELS = hn::Lanes(d8) / 4;
-    const auto vc = hn::Set(d8, 0);  // placeholder
 
-    // Broadcast color bytes
     tjs_uint8 color_bytes[4] = {
         static_cast<tjs_uint8>(color & 0xFF),
         static_cast<tjs_uint8>((color >> 8) & 0xFF),
@@ -258,6 +256,8 @@ void ConstColorAlphaBlend_HWY(tjs_uint32 *dest, tjs_int len,
         color_bytes[0], color_bytes[1], color_bytes[2], color_bytes[3],
         color_bytes[0], color_bytes[1], color_bytes[2], color_bytes[3]);
     const auto vopa16 = hn::Set(d16, static_cast<uint16_t>(opa));
+    const auto v255 = hn::Set(d16, static_cast<uint16_t>(255));
+    const auto vinv_opa = hn::Sub(v255, vopa16);  // 255 - opa
 
     tjs_int i = 0;
     for (; i + static_cast<tjs_int>(N_PIXELS) <= len; i += N_PIXELS) {
@@ -269,8 +269,9 @@ void ConstColorAlphaBlend_HWY(tjs_uint32 *dest, tjs_int len,
         auto c_hi = hn::PromoteUpperTo(d16, vcolor);
         auto d_hi = hn::PromoteUpperTo(d16, vd);
 
-        auto r_lo = hn::Add(d_lo, hn::ShiftRight<8>(hn::Mul(hn::Sub(c_lo, d_lo), vopa16)));
-        auto r_hi = hn::Add(d_hi, hn::ShiftRight<8>(hn::Mul(hn::Sub(c_hi, d_hi), vopa16)));
+        // result = (color * opa + dest * (255 - opa)) >> 8
+        auto r_lo = hn::ShiftRight<8>(hn::Add(hn::Mul(c_lo, vopa16), hn::Mul(d_lo, vinv_opa)));
+        auto r_hi = hn::ShiftRight<8>(hn::Add(hn::Mul(c_hi, vopa16), hn::Mul(d_hi, vinv_opa)));
 
         auto result = hn::OrderedDemote2To(d8, r_lo, r_hi);
         hn::StoreU(result, d8, reinterpret_cast<uint8_t*>(dest + i));

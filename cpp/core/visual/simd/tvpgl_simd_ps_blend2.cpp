@@ -62,14 +62,18 @@ static HWY_INLINE hn::Vec<hn::ScalableTag<uint8_t>> PsApplyAlpha(
     hn::Vec<hn::ScalableTag<uint8_t>> va) {
     const hn::Repartition<uint16_t, decltype(d8)> d16;
     const auto half = hn::Half<decltype(d8)>();
+    const auto v255 = hn::Set(d16, static_cast<uint16_t>(255));
     auto s_lo = hn::PromoteTo(d16, hn::LowerHalf(half, vs_blended));
     auto d_lo = hn::PromoteTo(d16, hn::LowerHalf(half, vd));
     auto a_lo = hn::PromoteTo(d16, hn::LowerHalf(half, va));
     auto s_hi = hn::PromoteUpperTo(d16, vs_blended);
     auto d_hi = hn::PromoteUpperTo(d16, vd);
     auto a_hi = hn::PromoteUpperTo(d16, va);
-    auto r_lo = hn::Add(d_lo, hn::ShiftRight<8>(hn::Mul(hn::Sub(s_lo, d_lo), a_lo)));
-    auto r_hi = hn::Add(d_hi, hn::ShiftRight<8>(hn::Mul(hn::Sub(s_hi, d_hi), a_hi)));
+    // result = (s * a + d * (255 - a)) >> 8, all unsigned, no overflow
+    auto inv_a_lo = hn::Sub(v255, a_lo);
+    auto inv_a_hi = hn::Sub(v255, a_hi);
+    auto r_lo = hn::ShiftRight<8>(hn::Add(hn::Mul(s_lo, a_lo), hn::Mul(d_lo, inv_a_lo)));
+    auto r_hi = hn::ShiftRight<8>(hn::Add(hn::Mul(s_hi, a_hi), hn::Mul(d_hi, inv_a_hi)));
     return hn::OrderedDemote2To(d8, r_lo, r_hi);
 }
 
@@ -141,20 +145,21 @@ static HWY_INLINE hn::Vec<hn::ScalableTag<uint8_t>> OverlayCore(
     auto d_hi = hn::PromoteUpperTo(d16, vd);
     auto s_hi = hn::PromoteUpperTo(d16, vs);
 
-    // Path 1 (d < 128): 2*d*s/255 ≈ (2*d*s) >> 8
-    auto p1_lo = hn::ShiftRight<8>(hn::Mul(hn::ShiftLeft<1>(d_lo), s_lo));
-    auto p1_hi = hn::ShiftRight<8>(hn::Mul(hn::ShiftLeft<1>(d_hi), s_hi));
+    // Path 1 (d < 128): 2*d*s/255 ≈ (d*s) >> 7
+    // d*s max=65025 fits u16, >>7 max=507, saturates to 255 on demote
+    auto p1_lo = hn::ShiftRight<7>(hn::Mul(d_lo, s_lo));
+    auto p1_hi = hn::ShiftRight<7>(hn::Mul(d_hi, s_hi));
     auto path1 = hn::OrderedDemote2To(d8, p1_lo, p1_hi);
 
     // Path 2 (d >= 128): 2*(d+s) - 2*d*s/255 - 255
-    // = 2*d + 2*s - 2*d*s/255 - 255
-    auto ds_lo = hn::Add(d_lo, s_lo);  // d+s
+    // = 2*(d+s) - 2*(d*s>>8) - 255
+    auto ds_lo = hn::Add(d_lo, s_lo);  // d+s, max 510
     auto ds_hi = hn::Add(d_hi, s_hi);
-    auto mul_lo = hn::ShiftRight<8>(hn::Mul(d_lo, s_lo));  // d*s/255
-    auto mul_hi = hn::ShiftRight<8>(hn::Mul(d_hi, s_hi));
-    // 2*(d+s) - 2*d*s/255 - 255
-    auto p2_lo = hn::Sub(hn::Sub(hn::ShiftLeft<1>(ds_lo), hn::ShiftLeft<1>(mul_lo)), v255_16);
-    auto p2_hi = hn::Sub(hn::Sub(hn::ShiftLeft<1>(ds_hi), hn::ShiftLeft<1>(mul_hi)), v255_16);
+    auto mul_lo = hn::ShiftRight<7>(hn::Mul(d_lo, s_lo));  // 2*d*s/256
+    auto mul_hi = hn::ShiftRight<7>(hn::Mul(d_hi, s_hi));
+    // 2*(d+s) - 2*d*s/256 - 255
+    auto p2_lo = hn::Sub(hn::Sub(hn::ShiftLeft<1>(ds_lo), mul_lo), v255_16);
+    auto p2_hi = hn::Sub(hn::Sub(hn::ShiftLeft<1>(ds_hi), mul_hi), v255_16);
     auto path2 = hn::OrderedDemote2To(d8, p2_lo, p2_hi);
 
     return hn::IfThenElse(mask, path1, path2);
@@ -179,18 +184,18 @@ static HWY_INLINE hn::Vec<hn::ScalableTag<uint8_t>> HardLightCore(
     auto d_hi = hn::PromoteUpperTo(d16, vd);
     auto s_hi = hn::PromoteUpperTo(d16, vs);
 
-    // Path 1 (s < 128): 2*d*s/255
-    auto p1_lo = hn::ShiftRight<8>(hn::Mul(hn::ShiftLeft<1>(d_lo), s_lo));
-    auto p1_hi = hn::ShiftRight<8>(hn::Mul(hn::ShiftLeft<1>(d_hi), s_hi));
+    // Path 1 (s < 128): 2*d*s/255 ≈ (d*s) >> 7
+    auto p1_lo = hn::ShiftRight<7>(hn::Mul(d_lo, s_lo));
+    auto p1_hi = hn::ShiftRight<7>(hn::Mul(d_hi, s_hi));
     auto path1 = hn::OrderedDemote2To(d8, p1_lo, p1_hi);
 
-    // Path 2 (s >= 128): 2*(d+s) - 2*d*s/255 - 255
+    // Path 2 (s >= 128): 2*(d+s) - 2*d*s/256 - 255
     auto ds_lo = hn::Add(d_lo, s_lo);
     auto ds_hi = hn::Add(d_hi, s_hi);
-    auto mul_lo = hn::ShiftRight<8>(hn::Mul(d_lo, s_lo));
-    auto mul_hi = hn::ShiftRight<8>(hn::Mul(d_hi, s_hi));
-    auto p2_lo = hn::Sub(hn::Sub(hn::ShiftLeft<1>(ds_lo), hn::ShiftLeft<1>(mul_lo)), v255_16);
-    auto p2_hi = hn::Sub(hn::Sub(hn::ShiftLeft<1>(ds_hi), hn::ShiftLeft<1>(mul_hi)), v255_16);
+    auto mul_lo = hn::ShiftRight<7>(hn::Mul(d_lo, s_lo));
+    auto mul_hi = hn::ShiftRight<7>(hn::Mul(d_hi, s_hi));
+    auto p2_lo = hn::Sub(hn::Sub(hn::ShiftLeft<1>(ds_lo), mul_lo), v255_16);
+    auto p2_hi = hn::Sub(hn::Sub(hn::ShiftLeft<1>(ds_hi), mul_hi), v255_16);
     auto path2 = hn::OrderedDemote2To(d8, p2_lo, p2_hi);
 
     return hn::IfThenElse(mask, path1, path2);

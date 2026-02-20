@@ -143,58 +143,41 @@ void TVPGL_SIMD_Init() {
     TVPFillARGB_NC     = TVPFillARGB_hwy;
 
     // =====================================================================
-    // Phase 2: Core alpha blend (4 of 8 variants)
-    // Note: _d, _a, _do, _ao variants require dest-alpha table access,
-    //       deferred to Phase 2+ or Phase 3.
+    // Phase 2: Alpha Blend (fixed: signed i16 arithmetic)
     // =====================================================================
     TVPAlphaBlend       = TVPAlphaBlend_hwy;
     TVPAlphaBlend_HDA   = TVPAlphaBlend_HDA_hwy;
     TVPAlphaBlend_o     = TVPAlphaBlend_o_hwy;
     TVPAlphaBlend_HDA_o = TVPAlphaBlend_HDA_o_hwy;
 
-    // =====================================================================
-    // Phase 2: Add blend (4 variants)
-    // =====================================================================
+    // Phase 2: Add/Sub/Mul/Screen Blend (no i16 bug - these use SaturatedAdd/Sub/Mul)
     TVPAddBlend       = TVPAddBlend_hwy;
     TVPAddBlend_HDA   = TVPAddBlend_HDA_hwy;
     TVPAddBlend_o     = TVPAddBlend_o_hwy;
     TVPAddBlend_HDA_o = TVPAddBlend_HDA_o_hwy;
 
-    // =====================================================================
-    // Phase 2: Sub blend (4 variants)
-    // =====================================================================
     TVPSubBlend       = TVPSubBlend_hwy;
     TVPSubBlend_HDA   = TVPSubBlend_HDA_hwy;
     TVPSubBlend_o     = TVPSubBlend_o_hwy;
     TVPSubBlend_HDA_o = TVPSubBlend_HDA_o_hwy;
 
-    // =====================================================================
-    // Phase 2: Mul blend (4 variants)
-    // =====================================================================
     TVPMulBlend       = TVPMulBlend_hwy;
     TVPMulBlend_HDA   = TVPMulBlend_HDA_hwy;
     TVPMulBlend_o     = TVPMulBlend_o_hwy;
     TVPMulBlend_HDA_o = TVPMulBlend_HDA_o_hwy;
 
-    // =====================================================================
-    // Phase 2: Screen blend (4 variants)
-    // =====================================================================
     TVPScreenBlend       = TVPScreenBlend_hwy;
     TVPScreenBlend_HDA   = TVPScreenBlend_HDA_hwy;
     TVPScreenBlend_o     = TVPScreenBlend_o_hwy;
     TVPScreenBlend_HDA_o = TVPScreenBlend_HDA_o_hwy;
 
-    // =====================================================================
-    // Phase 2: Const alpha blend (4 variants)
-    // =====================================================================
+    // Phase 2: Const Alpha Blend (fixed: signed i16 arithmetic)
     TVPConstAlphaBlend     = TVPConstAlphaBlend_hwy;
     TVPConstAlphaBlend_HDA = TVPConstAlphaBlend_HDA_hwy;
     TVPConstAlphaBlend_d   = TVPConstAlphaBlend_d_hwy;
     TVPConstAlphaBlend_a   = TVPConstAlphaBlend_a_hwy;
 
-    // =====================================================================
-    // Phase 2: Additive (pre-multiplied) alpha blend (6 variants)
-    // =====================================================================
+    // Phase 2: Additive Alpha Blend (no i16 bug - uses SaturatedAdd)
     TVPAdditiveAlphaBlend       = TVPAdditiveAlphaBlend_hwy;
     TVPAdditiveAlphaBlend_HDA   = TVPAdditiveAlphaBlend_HDA_hwy;
     TVPAdditiveAlphaBlend_o     = TVPAdditiveAlphaBlend_o_hwy;
@@ -202,22 +185,18 @@ void TVPGL_SIMD_Init() {
     TVPAdditiveAlphaBlend_a     = TVPAdditiveAlphaBlend_a_hwy;
     TVPAdditiveAlphaBlend_ao    = TVPAdditiveAlphaBlend_ao_hwy;
 
-    // =====================================================================
-    // Phase 2: AlphaColorMat
-    // =====================================================================
+    // Phase 2: Alpha Color Mat (fixed: signed i16 arithmetic)
     TVPAlphaColorMat = TVPAlphaColorMat_hwy;
 
     // =====================================================================
-    // Phase 3: Photoshop blend modes (16 types × 4 variants = 64)
+    // Phase 3: Photoshop blend modes (fixed: signed i16 in PsApplyAlpha)
     // =====================================================================
-
 #define REGISTER_PS_BLEND_4V(Name)                                            \
     TVPPs##Name##Blend       = TVPPs##Name##Blend_hwy;                        \
     TVPPs##Name##Blend_HDA   = TVPPs##Name##Blend_HDA_hwy;                    \
     TVPPs##Name##Blend_o     = TVPPs##Name##Blend_o_hwy;                      \
     TVPPs##Name##Blend_HDA_o = TVPPs##Name##Blend_HDA_o_hwy;
 
-    // Part 1: Fully SIMD-optimized
     REGISTER_PS_BLEND_4V(Alpha)
     REGISTER_PS_BLEND_4V(Add)
     REGISTER_PS_BLEND_4V(Sub)
@@ -226,8 +205,6 @@ void TVPGL_SIMD_Init() {
     REGISTER_PS_BLEND_4V(Lighten)
     REGISTER_PS_BLEND_4V(Darken)
     REGISTER_PS_BLEND_4V(Diff)
-
-    // Part 2: Overlay/HardLight/Exclusion (SIMD) + table-based (scalar with unified entry)
     REGISTER_PS_BLEND_4V(Overlay)
     REGISTER_PS_BLEND_4V(HardLight)
     REGISTER_PS_BLEND_4V(Exclusion)
@@ -240,7 +217,7 @@ void TVPGL_SIMD_Init() {
 #undef REGISTER_PS_BLEND_4V
 
     // =====================================================================
-    // Phase 4: Convert functions
+    // Phase 4: Convert functions (fixed: uses TVPDivTable for AdditiveToAlpha)
     // =====================================================================
     TVPConvertAdditiveAlphaToAlpha = TVPConvertAdditiveAlphaToAlpha_hwy;
     TVPConvertAlphaToAdditiveAlpha = TVPConvertAlphaToAdditiveAlpha_hwy;
@@ -249,7 +226,7 @@ void TVPGL_SIMD_Init() {
     TVPReverseRGB                  = TVPReverseRGB_hwy;
 
     // =====================================================================
-    // Phase 4: Misc functions
+    // Phase 4: Misc functions (fixed: ConstColorAlphaBlend uses signed i16)
     // =====================================================================
     TVPDoGrayScale         = TVPDoGrayScale_hwy;
     TVPSwapLine32          = TVPSwapLine32_hwy;
@@ -266,7 +243,9 @@ void TVPGL_SIMD_Init() {
     TVPRemoveConstOpacity  = TVPRemoveConstOpacity_hwy;
 
     // =====================================================================
-    // Phase 4: Blur functions
+    // Phase 4: Blur functions (fixed: DoBoxBlurAvg uses 4-element running
+    // sum, output-first, half_n rounding, _d uses TVPDivTable.
+    // ChBlurMulCopy65 uses >>18, ChBlurAddMulCopy65 accumulates+saturates.)
     // =====================================================================
     TVPAddSubVertSum16     = TVPAddSubVertSum16_hwy;
     TVPAddSubVertSum16_d   = TVPAddSubVertSum16_d_hwy;
@@ -280,8 +259,4 @@ void TVPGL_SIMD_Init() {
     TVPChBlurAddMulCopy65  = TVPChBlurAddMulCopy65_hwy;
     TVPChBlurMulCopy       = TVPChBlurMulCopy_hwy;
     TVPChBlurAddMulCopy    = TVPChBlurAddMulCopy_hwy;
-
-    // Note: Stretch/LinTrans series not SIMD-ized (scatter-gather access
-    // pattern, low SIMD benefit). They remain using scalar implementations.
-    // UnivTrans/ApplyColorMap/AdjustGamma also remain scalar (table-dependent).
 }
