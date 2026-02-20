@@ -128,3 +128,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE Freetype::Freetype)
 
 find_package(PNG REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE PNG::PNG)
+
+# Highway SIMD optimization module
+add_subdirectory(simd)
+target_link_libraries(${PROJECT_NAME} PRIVATE tvpgl_simd)

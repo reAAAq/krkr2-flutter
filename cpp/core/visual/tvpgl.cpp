@@ -24,6 +24,7 @@
     ((v & 0xFF00FF00) | ((v >> 16) & 0xFF) | ((v & 0xFF) << 16))
 
 extern void TVPGL_C_Init();
+#include "simd/tvpgl_simd_init.h"
 extern "C" {
 /*-----------------------------------------------------------------*/
 unsigned char TVPDivTable[256 * 256];
@@ -14129,6 +14130,7 @@ TVP_GL_FUNC_DECL(void, TVPInitTVPGL, ()) {
 #endif
     TVPCreateTable();
     TVPGL_C_Init();
+    TVPGL_SIMD_Init();  // Highway SIMD override (must be after TVPGL_C_Init)
 }
 
 /*export*/

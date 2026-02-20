@@ -87,6 +87,7 @@
       "default-features": false
     },
     "spdlog",
+    "highway",
     "uchardet",
     "unrar",
     {
