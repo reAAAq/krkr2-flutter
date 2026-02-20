@@ -486,20 +486,24 @@ class EngineSurfaceState extends State<EngineSurface> {
   }
 
   Widget _buildTextureView(int textureId) {
-    final int width = _frameWidth > 0
+    // Use physical pixel dimensions, but convert to logical pixels for layout.
+    // The Texture widget renders at full physical resolution regardless of
+    // the SizedBox logical size, so this only affects aspect ratio calculation.
+    final double dpr = _devicePixelRatio > 0 ? _devicePixelRatio : 1.0;
+    final int physW = _frameWidth > 0
         ? _frameWidth
         : (_surfaceWidth > 0 ? _surfaceWidth : 1);
-    final int height = _frameHeight > 0
+    final int physH = _frameHeight > 0
         ? _frameHeight
         : (_surfaceHeight > 0 ? _surfaceHeight : 1);
-    return ClipRect(
-      child: FittedBox(
-        fit: BoxFit.cover,
-        child: SizedBox(
-          width: width.toDouble(),
-          height: height.toDouble(),
-          child: Texture(textureId: textureId),
-        ),
+    final double logicalW = physW / dpr;
+    final double logicalH = physH / dpr;
+    return FittedBox(
+      fit: BoxFit.contain,
+      child: SizedBox(
+        width: logicalW,
+        height: logicalH,
+        child: Texture(textureId: textureId),
       ),
     );
   }
@@ -664,7 +668,7 @@ class EngineSurfaceState extends State<EngineSurface> {
                   else
                     RawImage(
                       image: _frameImage,
-                      fit: BoxFit.cover,
+                      fit: BoxFit.contain,
                       filterQuality: FilterQuality.none,
                     ),
                 ],

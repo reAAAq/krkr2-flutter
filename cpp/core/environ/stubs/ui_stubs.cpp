@@ -173,7 +173,51 @@ public:
             fbW = egl.GetWidth();
             fbH = egl.GetHeight();
         }
+        // Compute letterbox/pillarbox viewport to preserve game aspect ratio.
+        // The game texture (tw x th) may differ in aspect from the render
+        // target (fbW x fbH). We fit the game content inside the surface
+        // while maintaining its aspect ratio, centering it with black bars.
+        float texAspect = static_cast<float>(tw) / static_cast<float>(th);
+        float fbAspect  = static_cast<float>(fbW) / static_cast<float>(fbH);
+        GLsizei vpX = 0, vpY = 0;
+        GLsizei vpW = static_cast<GLsizei>(fbW);
+        GLsizei vpH = static_cast<GLsizei>(fbH);
+        if (texAspect > fbAspect) {
+            // Game is wider than surface → pillarbox (black bars top/bottom)
+            vpW = static_cast<GLsizei>(fbW);
+            vpH = static_cast<GLsizei>(static_cast<float>(fbW) / texAspect);
+            vpY = static_cast<GLsizei>((fbH - vpH) / 2);
+        } else if (texAspect < fbAspect) {
+            // Game is taller than surface → letterbox (black bars left/right)
+            vpH = static_cast<GLsizei>(fbH);
+            vpW = static_cast<GLsizei>(static_cast<float>(fbH) * texAspect);
+            vpX = static_cast<GLsizei>((fbW - vpW) / 2);
+        }
+
+        // Clear entire framebuffer to black (produces the letterbox bars)
         glViewport(0, 0, static_cast<GLsizei>(fbW), static_cast<GLsizei>(fbH));
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        // Set viewport to the aspect-correct sub-region
+        glViewport(vpX, vpY, vpW, vpH);
+
+        // Update DrawDevice dest rect so coordinate transforms
+        // (surface pixels → game layer) work correctly with letterbox offset.
+        if (owner_) {
+            auto* dd = owner_->GetDrawDevice();
+            if (dd) {
+                tTVPRect dest;
+                dest.left   = static_cast<tjs_int>(vpX);
+                dest.top    = static_cast<tjs_int>(vpY);
+                dest.right  = static_cast<tjs_int>(vpX + vpW);
+                dest.bottom = static_cast<tjs_int>(vpY + vpH);
+                dd->SetDestRectangle(dest);
+                dd->SetClipRectangle(dest);
+                dd->SetWindowSize(static_cast<tjs_int>(fbW),
+                                  static_cast<tjs_int>(fbH));
+            }
+        }
 
         // Upload texture data to our blit texture
         const tjs_int pitch = tex->GetPitch();
