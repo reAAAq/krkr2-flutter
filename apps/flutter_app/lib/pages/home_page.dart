@@ -1,5 +1,6 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/game_info.dart';
 import '../services/game_manager.dart';
@@ -14,8 +15,11 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  static const String _dylibPathKey = 'krkr2_dylib_path';
+
   final GameManager _gameManager = GameManager();
   bool _loading = true;
+  String? _dylibPath;
 
   @override
   void initState() {
@@ -24,6 +28,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _loadGames() async {
+    final prefs = await SharedPreferences.getInstance();
+    _dylibPath = prefs.getString(_dylibPathKey);
     await _gameManager.load();
     if (mounted) setState(() => _loading = false);
   }
@@ -113,10 +119,127 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _launchGame(GameInfo game) {
+    if (_dylibPath == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Engine dylib not set. Please configure it in Settings first.',
+          ),
+          behavior: SnackBarBehavior.floating,
+          action: SnackBarAction(
+            label: 'Settings',
+            onPressed: _showSettingsDialog,
+          ),
+        ),
+      );
+      return;
+    }
     _gameManager.markPlayed(game.path);
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => GamePage(gamePath: game.path),
+        builder: (_) => GamePage(
+          gamePath: game.path,
+          ffiLibraryPath: _dylibPath,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showSettingsDialog() async {
+    String? tempPath = _dylibPath;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Settings'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Engine dylib path',
+                style: Theme.of(ctx).textTheme.titleSmall,
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        tempPath ?? 'Not set (required)',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontFamily: 'monospace',
+                          color: tempPath != null
+                              ? null
+                              : Theme.of(ctx)
+                                  .colorScheme
+                                  .error
+                                  .withValues(alpha: 0.7),
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (tempPath != null)
+                      IconButton(
+                        icon: const Icon(Icons.clear, size: 18),
+                        tooltip: 'Reset to default',
+                        onPressed: () {
+                          setDialogState(() => tempPath = null);
+                        },
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    final result = await FilePicker.platform.pickFiles(
+                      dialogTitle: 'Select Engine dylib',
+                      type: FileType.any,
+                    );
+                    if (result != null && result.files.single.path != null) {
+                      setDialogState(
+                        () => tempPath = result.files.single.path,
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.folder_open),
+                  label: const Text('Browse...'),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                final prefs = await SharedPreferences.getInstance();
+                if (tempPath != null) {
+                  await prefs.setString(_dylibPathKey, tempPath!);
+                } else {
+                  await prefs.remove(_dylibPathKey);
+                }
+                if (mounted) {
+                  setState(() => _dylibPath = tempPath);
+                }
+                if (ctx.mounted) Navigator.pop(ctx);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -130,18 +253,22 @@ class _HomePageState extends State<HomePage> {
       appBar: AppBar(
         title: const Text('Krkr2 Launcher'),
         actions: [
+          if (_dylibPath != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Chip(
+                avatar: const Icon(Icons.extension, size: 16),
+                label: Text(
+                  _dylibPath!.split('/').last,
+                  style: const TextStyle(fontSize: 12),
+                ),
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
           IconButton(
             icon: const Icon(Icons.settings),
             tooltip: 'Settings',
-            onPressed: () {
-              // TODO: Settings page
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Settings coming soon'),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
-            },
+            onPressed: _showSettingsDialog,
           ),
         ],
       ),

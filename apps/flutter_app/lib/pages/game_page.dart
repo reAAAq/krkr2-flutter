@@ -12,10 +12,12 @@ class GamePage extends StatefulWidget {
   const GamePage({
     super.key,
     required this.gamePath,
+    this.ffiLibraryPath,
     this.engineBridgeBuilder = createEngineBridge,
   });
 
   final String gamePath;
+  final String? ffiLibraryPath;
   final EngineBridgeBuilder engineBridgeBuilder;
 
   @override
@@ -50,8 +52,11 @@ class _GamePageState extends State<GamePage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _bridge = widget.engineBridgeBuilder();
+    _bridge = widget.engineBridgeBuilder(ffiLibraryPath: widget.ffiLibraryPath);
     _log('Initializing engine for: ${widget.gamePath}');
+    if (widget.ffiLibraryPath != null) {
+      _log('Using custom dylib: ${widget.ffiLibraryPath}');
+    }
     unawaited(_autoStart());
   }
 
@@ -403,7 +408,9 @@ class _GamePageState extends State<GamePage>
                       _tickCount = 0;
                     });
                     unawaited(_bridge.engineDestroy());
-                    _bridge = widget.engineBridgeBuilder();
+                    _bridge = widget.engineBridgeBuilder(
+                      ffiLibraryPath: widget.ffiLibraryPath,
+                    );
                     unawaited(_autoStart());
                   },
                   icon: const Icon(Icons.refresh),
