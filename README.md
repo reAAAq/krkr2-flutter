@@ -16,6 +16,8 @@
 **语言 / Language**: 中文 | [English](README_EN.md)
 
 > 🙏 本项目基于 [krkr2](https://github.com/2468785842/krkr2) 重构，感谢原作者的贡献。
+>
+> 📦 新仓库地址：[KrKr2-Next](https://github.com/reAAAq/KrKr2-Next)
 
 ## 简介
 

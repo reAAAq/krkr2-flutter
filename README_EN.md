@@ -16,6 +16,8 @@
 **语言 / Language**: [中文](README.md) | English
 
 > 🙏 This project is a refactor based on [krkr2](https://github.com/2468785842/krkr2). Thanks to the original author for the contribution.
+>
+> 📦 New repository: [KrKr2-Next](https://github.com/reAAAq/KrKr2-Next)
 
 ## Overview
 

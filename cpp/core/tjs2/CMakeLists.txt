@@ -17,7 +17,11 @@ endif()
 #===============================================================#
 #======================= generate parser =======================#
 #===============================================================#
-find_program(BISON_EXECUTABLE NAMES win_bison.exe bison.exe bison)
+find_program(BISON_EXECUTABLE NAMES win_bison.exe bison.exe bison
+    HINTS
+        /opt/homebrew/opt/bison/bin   # Homebrew (Apple Silicon)
+        /usr/local/opt/bison/bin      # Homebrew (Intel Mac)
+)
 
 set(BISON_FILES
     ${CMAKE_CURRENT_LIST_DIR}/bison/tjs.y

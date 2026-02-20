@@ -73,15 +73,8 @@ elseif(IOS)
 #                ${APP_UI_RES}
 #        )
 elseif(MACOS)
-    set(APP_UI_RES
-            ${CMAKE_CURRENT_SOURCE_DIR}/platforms/apple/macos/Icon.icns
-            ${CMAKE_CURRENT_SOURCE_DIR}/platforms/apple/macos/Info.plist
-    )
-    add_executable(${PROJECT_NAME}
-            ${CMAKE_CURRENT_SOURCE_DIR}/platforms/apple/macos/main.cpp
-            ${CMAKE_CURRENT_SOURCE_DIR}/platforms/apple/macos/Prefix.pch
-            ${APP_UI_RES}
-    )
+    # macOS uses Flutter as the app shell; only build engine libraries.
+    # The standalone krkr2 executable (cocos2dx) is no longer produced.
 endif()
 
 # external lib
@@ -94,17 +87,20 @@ if(BUILD_ENGINE_API)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/bridge/engine_api)
 endif()
 
-target_link_libraries(${PROJECT_NAME} PUBLIC
-    krkr2plugin krkr2core
-)
+# Link the standalone executable target (not needed on macOS where Flutter is the app shell)
+if(TARGET ${PROJECT_NAME})
+    target_link_libraries(${PROJECT_NAME} PUBLIC
+        krkr2plugin krkr2core
+    )
 
-## app config
-if(APPLE)
-    set_target_properties(${APP_NAME} PROPERTIES RESOURCE "${APP_UI_RES}")
-    if(MACOSX)
-        set_target_properties(${APP_NAME} PROPERTIES
-                MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/platforms/apple/macos/Info.plist"
-        )
+    ## app config
+    if(APPLE)
+        set_target_properties(${APP_NAME} PROPERTIES RESOURCE "${APP_UI_RES}")
+        if(MACOSX)
+            set_target_properties(${APP_NAME} PROPERTIES
+                    MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/platforms/apple/macos/Info.plist"
+            )
+        endif()
     endif()
 endif()
 
