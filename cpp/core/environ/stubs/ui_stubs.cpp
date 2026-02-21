@@ -89,10 +89,19 @@ public:
     void SetDefaultMouseCursor() override {}
 
     void GetCursorPos(tjs_int &x, tjs_int &y) override {
-        x = 0; y = 0;
+        x = last_mouse_x_;
+        y = last_mouse_y_;
     }
 
-    void SetCursorPos(tjs_int x, tjs_int y) override {}
+    void SetCursorPos(tjs_int x, tjs_int y) override {
+        last_mouse_x_ = x;
+        last_mouse_y_ = y;
+    }
+
+    void UpdateCursorPos(tjs_int x, tjs_int y) override {
+        last_mouse_x_ = x;
+        last_mouse_y_ = y;
+    }
 
     void SetHintText(const ttstr &text) override {}
 
@@ -449,6 +458,11 @@ private:
     tjs_int height_;
     bool active_;
     bool closing_;
+
+    // Cached mouse position in surface coordinates.
+    // Updated by EngineLoop on pointer events, read by GetCursorPos().
+    tjs_int last_mouse_x_ = 0;
+    tjs_int last_mouse_y_ = 0;
 
     // Blit resources for rendering to EGL pbuffer
     GLuint blit_program_ = 0;

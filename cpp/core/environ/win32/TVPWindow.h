@@ -330,6 +330,8 @@ public:
     virtual void SetDefaultMouseCursor() = 0;
     virtual void GetCursorPos(tjs_int &x, tjs_int &y) = 0;
     virtual void SetCursorPos(tjs_int x, tjs_int y) = 0;
+    // Update cached cursor position (called from EngineLoop on mouse events)
+    virtual void UpdateCursorPos(tjs_int x, tjs_int y) {}
     virtual void SetHintText(const ttstr &text) = 0;
     virtual void SetAttentionPoint(tjs_int left, tjs_int top,
                                    const struct tTVPFont *font) = 0;

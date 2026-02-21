@@ -21,6 +21,7 @@
 
 // TVP input event classes + TVPPostInputEvent
 #include "WindowIntf.h"
+#include "WindowImpl.h"
 #include "tvpinputdefs.h"
 #include "EventIntf.h"
 
@@ -194,6 +195,10 @@ void EngineLoop::HandlePointerDown(const EngineInputEvent& event) {
     const tjs_int y = static_cast<tjs_int>(event.y);
     const uint32_t shift = ConvertModifiers(event.modifiers);
 
+    // Update cached cursor position for Layer.cursorX/cursorY queries
+    if (win->GetForm())
+        win->GetForm()->UpdateCursorPos(x, y);
+
     // Map button index: 0=left, 1=right, 2=middle (matches tTVPMouseButton)
     tTVPMouseButton mb = mbLeft;
     if (event.button == 1)
@@ -234,6 +239,10 @@ void EngineLoop::HandlePointerMove(const EngineInputEvent& event) {
     const tjs_int y = static_cast<tjs_int>(event.y);
     const uint32_t shift = ConvertModifiers(event.modifiers);
 
+    // Update cached cursor position for Layer.cursorX/cursorY queries
+    if (win->GetForm())
+        win->GetForm()->UpdateCursorPos(x, y);
+
     TVPPostInputEvent(
         new tTVPOnMouseMoveInputEvent(win, x, y, shift));
 }
@@ -245,6 +254,10 @@ void EngineLoop::HandlePointerUp(const EngineInputEvent& event) {
     const tjs_int x = static_cast<tjs_int>(event.x);
     const tjs_int y = static_cast<tjs_int>(event.y);
     const uint32_t shift = ConvertModifiers(event.modifiers);
+
+    // Update cached cursor position for Layer.cursorX/cursorY queries
+    if (win->GetForm())
+        win->GetForm()->UpdateCursorPos(x, y);
 
     tTVPMouseButton mb = mbLeft;
     if (event.button == 1)
