@@ -36,6 +36,7 @@ class _GamePageState extends State<GamePage>
 
   static const String _perfOverlayKey = 'krkr2_perf_overlay';
   static const String _targetFpsKey = 'krkr2_target_fps';
+  static const String _rendererKey = 'krkr2_renderer';
   static const int _defaultFps = 60;
 
   Ticker? _ticker;
@@ -143,6 +144,12 @@ class _GamePageState extends State<GamePage>
       return;
     }
     _log('engine_create => OK');
+
+    // Set renderer pipeline (opengl / software) before opening the game
+    final prefs = await SharedPreferences.getInstance();
+    final renderer = prefs.getString(_rendererKey) ?? 'opengl';
+    _log('Setting renderer=$renderer');
+    await _bridge.engineSetOption(key: 'renderer', value: renderer);
 
     if (!mounted) return;
     setState(() => _phase = _EnginePhase.opening);
