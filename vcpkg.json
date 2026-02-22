@@ -71,7 +71,10 @@
       "name": "opencv4",
       "default-features": false,
       "features": [
-        "openmp"
+        {
+          "name": "openmp",
+          "platform": "!ios"
+        }
       ]
     },
     {
