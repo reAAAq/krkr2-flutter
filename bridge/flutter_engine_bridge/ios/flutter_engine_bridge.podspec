@@ -17,8 +17,10 @@ Pod::Spec.new do |s|
   s.dependency 'Flutter'
   s.platform         = :ios, '15.0'
 
-  # Pre-built engine_api static library
-  s.vendored_libraries = 'Libs/libengine_api.a'
+  # Pre-built engine static libraries (split to avoid duplicate symbols)
+  # libengine_project.a = project code (force-loaded)
+  # libengine_vendors.a = third-party vcpkg libs (normal linking)
+  s.vendored_libraries = 'Libs/libengine_project.a', 'Libs/libengine_vendors.a'
 
   # System framework dependencies (required by SDL2, FFmpeg, OpenAL, ANGLE, etc.)
   s.frameworks = 'IOSurface', 'CoreVideo', 'Metal', 'QuartzCore', 'Accelerate',
@@ -34,8 +36,10 @@ Pod::Spec.new do |s|
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
     'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386',
-    # Ensure static library symbols are not stripped
-    'OTHER_LDFLAGS' => '-ObjC -all_load',
+    # -ObjC: load all .o files containing ObjC classes/categories
+    # -force_load: force-load project library to ensure all C++ static initializers run
+    # Do NOT use -all_load (causes duplicate symbols from vcpkg libs with overlapping code)
+    'OTHER_LDFLAGS' => '-ObjC -force_load "$(PODS_TARGET_SRCROOT)/Libs/libengine_project.a"',
   }
   s.swift_version = '5.0'
 
