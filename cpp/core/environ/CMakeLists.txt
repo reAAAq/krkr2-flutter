@@ -23,6 +23,8 @@ set(ENVIRON_SOURCE_FILES
 
     $<$<BOOL:${MACOS}>:${ENVIRON_PATH}/apple/macos/platform.mm>
 
+    $<$<BOOL:${IOS}>:${ENVIRON_PATH}/apple/ios/platform.mm>
+
     ${ENVIRON_PATH}/MainScene.cpp
 
     ${ENVIRON_PATH}/ConfigManager/GlobalConfigManager.cpp
