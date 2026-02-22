@@ -11,6 +11,10 @@ vcpkg_cmake_configure(
     OPTIONS
         -DENABLE_OPENSSL=OFF
         -DENABLE_TEST=OFF
+        -DENABLE_TAR=OFF
+        -DENABLE_CAT=OFF
+        -DENABLE_CPIO=OFF
+        -DENABLE_UNZIP=OFF
 )
 
 vcpkg_cmake_install()
