@@ -177,9 +177,26 @@ void tTVPSystemControl::SystemWatchTimerTimer() {
 
         // fire compact event
         TVPDeliverCompactEvent(TVP_COMPACT_LEVEL_IDLE);
+    } else if(ContinuousEventCalling && tick - LastCompactedTick > 30000) {
+        // Even during continuous event processing (e.g. animations,
+        // game loops), periodically trigger a lightweight GC to prevent
+        // memory from growing indefinitely. This cleans up:
+        //   - TJS2 variant array stack & string heap (GC)
+        //   - Layer cache bitmaps (when CacheEnabledCount == 0)
+        //   - Temporary composition bitmaps
+        //   - XP3 segment cache
+        // Using IDLE level (5) — the lightest compact level — to avoid
+        // any stutter. 30 seconds interval keeps the overhead negligible.
+        LastCompactedTick = tick;
+        TVPDeliverCompactEvent(TVP_COMPACT_LEVEL_IDLE);
     }
     if(!ContinuousEventCalling && tick > LastRehashedTick + 1500) {
         // TJS2 object rehash
+        LastRehashedTick = tick;
+        TJSDoRehash();
+    } else if(ContinuousEventCalling && tick > LastRehashedTick + 30000) {
+        // Periodically rehash TJS2 object tables even during continuous
+        // events to prevent hash table fragmentation and memory waste.
         LastRehashedTick = tick;
         TJSDoRehash();
     }
