@@ -1,22 +1,34 @@
 find_package(ZLIB REQUIRED)
 
-list(APPEND ANGLE_SOURCES
-    ${libangle_gpu_info_util_mac_sources}
-    ${libangle_gpu_info_util_sources}
-    ${libangle_mac_sources}
-)
+# Use platform-specific gpu_info_util and sources
+if(IOS)
+    list(APPEND ANGLE_SOURCES
+        ${libangle_gpu_info_util_ios_sources}
+        ${libangle_gpu_info_util_sources}
+    )
+else()
+    list(APPEND ANGLE_SOURCES
+        ${libangle_gpu_info_util_mac_sources}
+        ${libangle_gpu_info_util_sources}
+        ${libangle_mac_sources}
+    )
+endif()
 
 list(APPEND ANGLEGLESv2_LIBRARIES
     "-framework CoreGraphics"
     "-framework Foundation"
-    "-framework IOKit"
     "-framework IOSurface"
 )
 
-# Quartz framework is only available on macOS, not iOS
+# IOKit and Quartz frameworks are only available on macOS, not iOS
 if(NOT IOS)
     list(APPEND ANGLEGLESv2_LIBRARIES
+        "-framework IOKit"
         "-framework Quartz"
+    )
+else()
+    list(APPEND ANGLEGLESv2_LIBRARIES
+        "-framework UIKit"
     )
 endif()
 
