@@ -20,9 +20,16 @@ Pod::Spec.new do |s|
   # Pre-built engine_api static library
   s.vendored_libraries = 'Libs/libengine_api.a'
 
-  # System framework dependencies
+  # System framework dependencies (required by SDL2, FFmpeg, OpenAL, ANGLE, etc.)
   s.frameworks = 'IOSurface', 'CoreVideo', 'Metal', 'QuartzCore', 'Accelerate',
-                 'AudioToolbox', 'AVFoundation', 'OpenAL'
+                 'AudioToolbox', 'AVFoundation', 'CoreAudio', 'CoreFoundation',
+                 'CoreGraphics', 'CoreMotion', 'CoreMedia', 'CoreBluetooth',
+                 'Foundation', 'UIKit', 'OpenGLES', 'VideoToolbox', 'Security'
+
+  s.weak_frameworks = 'GameController', 'CoreHaptics'
+
+  # System C/C++ libraries
+  s.libraries = 'xml2', 'c++', 'z', 'bz2', 'iconv', 'resolv'
 
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
