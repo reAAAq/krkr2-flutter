@@ -223,50 +223,70 @@ public:
         }
 
         // Upload texture data to our blit texture
-        const tjs_int pitch = tex->GetPitch();
-        const void* pixelData = tex->GetPixelData();
-        if (!pixelData) {
-            // Fallback: read line by line
-            if (blit_pixel_buf_.size() < static_cast<size_t>(tw * th * 4)) {
-                blit_pixel_buf_.resize(tw * th * 4);
-            }
-            for (tjs_uint y = 0; y < th; ++y) {
-                const void* line = tex->GetScanLineForRead(y);
-                if (line) {
-                    std::memcpy(blit_pixel_buf_.data() + y * tw * 4, line, tw * 4);
+        // Check if the texture is already a GPU-resident OGL texture.
+        // If so, skip the expensive CPU→GPU upload and use it directly.
+        const uint32_t nativeGLTex = tex->GetNativeGLTextureId();
+        GLuint blitSrcTexture;
+
+        if (nativeGLTex != 0) {
+            // GPU fast-path: the composited scene is already in a GL texture.
+            // Bind it directly — no pixel readback or upload needed.
+            blitSrcTexture = static_cast<GLuint>(nativeGLTex);
+        } else {
+            // CPU fallback: read pixel data and upload to our blit texture.
+            blitSrcTexture = blit_texture_;
+            const tjs_int pitch = tex->GetPitch();
+            const void* pixelData = tex->GetPixelData();
+            if (!pixelData) {
+                // Fallback: read line by line
+                if (blit_pixel_buf_.size() < static_cast<size_t>(tw * th * 4)) {
+                    blit_pixel_buf_.resize(tw * th * 4);
                 }
+                for (tjs_uint y = 0; y < th; ++y) {
+                    const void* line = tex->GetScanLineForRead(y);
+                    if (line) {
+                        std::memcpy(blit_pixel_buf_.data() + y * tw * 4, line, tw * 4);
+                    }
+                }
+                pixelData = blit_pixel_buf_.data();
             }
-            pixelData = blit_pixel_buf_.data();
+
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, blit_texture_);
+            // Use GL_UNPACK_ROW_LENGTH if pitch differs from width*4
+            if (pitch != static_cast<tjs_int>(tw * 4)) {
+                glPixelStorei(GL_UNPACK_ROW_LENGTH, pitch / 4);
+            }
+            // Use glTexSubImage2D when the texture size hasn't changed,
+            // avoiding per-frame texture memory reallocation.
+            if (blit_tex_w_ == tw && blit_tex_h_ == th) {
+                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0,
+                                static_cast<GLsizei>(tw), static_cast<GLsizei>(th),
+                                GL_RGBA, GL_UNSIGNED_BYTE, pixelData);
+            } else {
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
+                             static_cast<GLsizei>(tw), static_cast<GLsizei>(th),
+                             0, GL_RGBA, GL_UNSIGNED_BYTE, pixelData);
+                blit_tex_w_ = tw;
+                blit_tex_h_ = th;
+            }
+            if (pitch != static_cast<tjs_int>(tw * 4)) {
+                glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+            }
         }
 
+        // Bind the source texture for the fullscreen blit
         glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, blit_texture_);
-        // Use GL_UNPACK_ROW_LENGTH if pitch differs from width*4
-        if (pitch != static_cast<tjs_int>(tw * 4)) {
-            glPixelStorei(GL_UNPACK_ROW_LENGTH, pitch / 4);
-        }
-        // Use glTexSubImage2D when the texture size hasn't changed,
-        // avoiding per-frame texture memory reallocation.
-        if (blit_tex_w_ == tw && blit_tex_h_ == th) {
-            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0,
-                            static_cast<GLsizei>(tw), static_cast<GLsizei>(th),
-                            GL_RGBA, GL_UNSIGNED_BYTE, pixelData);
-        } else {
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
-                         static_cast<GLsizei>(tw), static_cast<GLsizei>(th),
-                         0, GL_RGBA, GL_UNSIGNED_BYTE, pixelData);
-            blit_tex_w_ = tw;
-            blit_tex_h_ = th;
-        }
-        if (pitch != static_cast<tjs_int>(tw * 4)) {
-            glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-        }
+        glBindTexture(GL_TEXTURE_2D, blitSrcTexture);
 
         // Draw fullscreen quad
         glUseProgram(blit_program_);
         glUniform1i(blit_tex_uniform_, 0);
         // In IOSurface mode, the surface has a top-down coordinate system
         // while OpenGL renders bottom-up, so we need to flip Y.
+        // When using a native OGL texture from the engine (GPU path), the
+        // texture is already in OGL convention (bottom-up), so we may need
+        // to flip when rendering to IOSurface but not to Pbuffer.
         glUniform1f(blit_flipy_uniform_, egl.HasIOSurface() ? 1.0f : 0.0f);
 
         glBindBuffer(GL_ARRAY_BUFFER, blit_vbo_);
