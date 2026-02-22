@@ -2608,7 +2608,9 @@ iTVPRenderManager::GetRenderMethod(tjs_int opa, bool hda,
 }
 
 void iTVPRenderManager::Initialize() {
-    RenderMethodCache = new tRenderMethodCache(this);
+    if (!RenderMethodCache) {
+        RenderMethodCache = new tRenderMethodCache(this);
+    }
 }
 
 void iTVPRenderManager::RegisterRenderMethod(const char *name,
@@ -3757,13 +3759,7 @@ public:
                            rc);
             tmp->Release();
         } else {
-            // TVPThrowExceptionMessage(TJS_W("OperateTriangles:
-            // unsupported
-            // draw mode")); 			iTVPTexture2D *tmp = new
-            // tTVPSoftwareTexture2D(nullptr, 0, rcclip.get_width(),
-            // rcclip.get_height(), TVPTextureFormat::RGBA);
-            // 			memset(tmp->GetScanLineForWrite(0), 0,
-            // tmp->GetPitch() * rcclip.get_height());
+            // General triangle path with InternalAffineBlt
             TAffuncFunc affineloop = GetStretchFunction(
                 static_cast<tTVPRenderMethod_Software *>(method));
 
@@ -4440,6 +4436,10 @@ public:
         tjs_uint8 *dest = (tjs_uint8 *)dst->GetScanLineForWrite(yc);
         const tjs_uint8 *src = (const tjs_uint8 *)_src->GetScanLineForRead(0);
 
+        if (!dest || !src) {
+            return 0;
+        }
+
         tTVPBBStretchType mode = /*param->mode*/ StretchType;
         tTVPBBStretchType type = (tTVPBBStretchType)(mode & stTypeMask);
         // tTVPBBBltMethod method = param->method;
@@ -4942,7 +4942,11 @@ bool TVPIsSoftwareRenderManager() {
 }
 
 iTVPRenderManager *TVPGetSoftwareRenderManager() { // for province image process
-    static tTVPSoftwareRenderManager *mgr = new tTVPSoftwareRenderManager;
+    static tTVPSoftwareRenderManager *mgr = []() {
+        auto *m = new tTVPSoftwareRenderManager;
+        m->Initialize();
+        return m;
+    }();
     return mgr;
 }
 
