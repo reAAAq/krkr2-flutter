@@ -36,6 +36,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   shared_preferences: ^2.5.0
   file_picker: ^9.2.0
+  path_provider: ^2.1.0
   flutter_engine_bridge:
     path: ../../bridge/flutter_engine_bridge
 

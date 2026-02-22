@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/game_info.dart';
@@ -29,6 +30,7 @@ class _HomePageState extends State<HomePage> {
 
   final GameManager _gameManager = GameManager();
   bool _loading = true;
+  String? _iosGamesDir; // iOS: Documents/Games directory path
   EngineMode _engineMode = EngineMode.builtIn;
   String? _customDylibPath;
   String? _builtInDylibPath;
@@ -85,10 +87,70 @@ class _HomePageState extends State<HomePage> {
     _targetFps = prefs.getInt(_targetFpsKey) ?? _defaultFps;
     if (!_fpsOptions.contains(_targetFps)) _targetFps = _defaultFps;
     await _gameManager.load();
+
+    // iOS: ensure Documents/Games directory exists and auto-scan
+    if (Platform.isIOS) {
+      await _initIosGamesDir();
+    }
+
     if (mounted) setState(() => _loading = false);
   }
 
+  /// iOS: initialize the Documents/Games directory and auto-scan for games.
+  Future<void> _initIosGamesDir() async {
+    final docDir = await getApplicationDocumentsDirectory();
+    final gamesDir = Directory('${docDir.path}/Games');
+    if (!await gamesDir.exists()) {
+      await gamesDir.create(recursive: true);
+    }
+    _iosGamesDir = gamesDir.path;
+    await _scanIosGamesDir();
+  }
+
+  /// iOS: scan Documents/Games for sub-directories and add them as games.
+  /// Skips directories already in the game list (by path) and removes
+  /// entries whose directories no longer exist on disk.
+  Future<void> _scanIosGamesDir() async {
+    if (_iosGamesDir == null) return;
+    final gamesDir = Directory(_iosGamesDir!);
+    if (!await gamesDir.exists()) return;
+
+    // Collect existing game paths for quick lookup
+    final existingPaths = _gameManager.games.map((g) => g.path).toSet();
+
+    // Scan filesystem and add only new directories
+    final entries = await gamesDir.list().toList();
+    final scannedPaths = <String>{};
+    for (final entry in entries) {
+      if (entry is Directory) {
+        scannedPaths.add(entry.path);
+        if (!existingPaths.contains(entry.path)) {
+          final game = GameInfo(path: entry.path);
+          await _gameManager.addGame(game);
+        }
+      }
+    }
+
+    // Remove games whose directories have been deleted from disk
+    final toRemove = existingPaths
+        .where((p) => p.startsWith(_iosGamesDir!) && !scannedPaths.contains(p))
+        .toList();
+    for (final path in toRemove) {
+      await _gameManager.removeGame(path);
+    }
+  }
+
   Future<void> _addGame() async {
+    if (Platform.isIOS) {
+      // iOS: re-scan the Documents/Games directory and show guidance
+      await _scanIosGamesDir();
+      if (mounted) {
+        setState(() {});
+        _showIosImportGuide();
+      }
+      return;
+    }
+
     final String? selectedDirectory =
         await FilePicker.platform.getDirectoryPath(
       dialogTitle: 'Select Game Directory',
@@ -109,6 +171,65 @@ class _HomePageState extends State<HomePage> {
         );
       }
     }
+  }
+
+  /// iOS: show a dialog guiding users to import games via the Files app.
+  void _showIosImportGuide() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Import Games'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Please copy your game folders to this app\'s directory using the Files app:',
+              style: TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('1. Open the "Files" app on your iPhone',
+                      style: TextStyle(fontSize: 13)),
+                  SizedBox(height: 6),
+                  Text('2. Go to: On My iPhone > Krkr2 > Games',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  SizedBox(height: 6),
+                  Text('3. Copy your game folder into the Games directory',
+                      style: TextStyle(fontSize: 13)),
+                  SizedBox(height: 6),
+                  Text('4. Come back and tap "Refresh" to detect new games',
+                      style: TextStyle(fontSize: 13)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Games directory: Games/',
+              style: TextStyle(
+                fontSize: 12,
+                fontFamily: 'monospace',
+                color: Theme.of(ctx).colorScheme.onSurface.withValues(alpha: 0.5),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Got it'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _removeGame(GameInfo game) async {
@@ -541,11 +662,33 @@ class _HomePageState extends State<HomePage> {
           : games.isEmpty
               ? _buildEmptyState(colorScheme)
               : _buildGameList(games, colorScheme),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _addGame,
-        icon: const Icon(Icons.add),
-        label: const Text('Add Game'),
-      ),
+      floatingActionButton: Platform.isIOS
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FloatingActionButton.extended(
+                  heroTag: 'refresh',
+                  onPressed: () async {
+                    await _scanIosGamesDir();
+                    if (mounted) setState(() {});
+                  },
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Refresh'),
+                ),
+                const SizedBox(width: 12),
+                FloatingActionButton.extended(
+                  heroTag: 'guide',
+                  onPressed: _showIosImportGuide,
+                  icon: const Icon(Icons.help_outline),
+                  label: const Text('How to Import'),
+                ),
+              ],
+            )
+          : FloatingActionButton.extended(
+              onPressed: _addGame,
+              icon: const Icon(Icons.add),
+              label: const Text('Add Game'),
+            ),
     );
   }
 
@@ -569,7 +712,10 @@ class _HomePageState extends State<HomePage> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Click "Add Game" to select a game directory',
+            Platform.isIOS
+                ? 'Use the Files app to copy game folders to:\nOn My iPhone > Krkr2 > Games\nThen tap "Refresh"'
+                : 'Click "Add Game" to select a game directory',
+            textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 14,
               color: colorScheme.onSurface.withValues(alpha: 0.4),
