@@ -163,74 +163,23 @@ public:
 
         auto& egl = krkr::GetEngineEGLContext();
 
-        // Bind the IOSurface FBO or default FBO
-        egl.BindRenderTarget();
-
-        // Determine the actual render target dimensions
-        uint32_t fbW, fbH;
-        if (egl.HasIOSurface()) {
-            fbW = egl.GetIOSurfaceWidth();
-            fbH = egl.GetIOSurfaceHeight();
-        } else {
-            fbW = egl.GetWidth();
-            fbH = egl.GetHeight();
-        }
-        // Compute letterbox/pillarbox viewport to preserve game aspect ratio.
-        // The game texture (tw x th) may differ in aspect from the render
-        // target (fbW x fbH). We fit the game content inside the surface
-        // while maintaining its aspect ratio, centering it with black bars.
-        float texAspect = static_cast<float>(tw) / static_cast<float>(th);
-        float fbAspect  = static_cast<float>(fbW) / static_cast<float>(fbH);
-        GLsizei vpX = 0, vpY = 0;
-        GLsizei vpW = static_cast<GLsizei>(fbW);
-        GLsizei vpH = static_cast<GLsizei>(fbH);
-        if (texAspect > fbAspect) {
-            // Game is wider than surface → pillarbox (black bars top/bottom)
-            vpW = static_cast<GLsizei>(fbW);
-            vpH = static_cast<GLsizei>(static_cast<float>(fbW) / texAspect);
-            vpY = static_cast<GLsizei>((fbH - vpH) / 2);
-        } else if (texAspect < fbAspect) {
-            // Game is taller than surface → letterbox (black bars left/right)
-            vpH = static_cast<GLsizei>(fbH);
-            vpW = static_cast<GLsizei>(static_cast<float>(fbH) * texAspect);
-            vpX = static_cast<GLsizei>((fbW - vpW) / 2);
-        }
-
-        // Clear entire framebuffer to black (produces the letterbox bars)
-        glViewport(0, 0, static_cast<GLsizei>(fbW), static_cast<GLsizei>(fbH));
-        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-
-        // Set viewport to the aspect-correct sub-region
-        glViewport(vpX, vpY, vpW, vpH);
-
-        // Update DrawDevice dest rect so coordinate transforms
-        // (surface pixels → game layer) work correctly with letterbox offset.
-        if (owner_) {
-            auto* dd = owner_->GetDrawDevice();
-            if (dd) {
-                tTVPRect dest;
-                dest.left   = static_cast<tjs_int>(vpX);
-                dest.top    = static_cast<tjs_int>(vpY);
-                dest.right  = static_cast<tjs_int>(vpX + vpW);
-                dest.bottom = static_cast<tjs_int>(vpY + vpH);
-                dd->SetDestRectangle(dest);
-                dd->SetClipRectangle(dest);
-                dd->SetViewport(dest);
-                dd->SetWindowSize(static_cast<tjs_int>(fbW),
-                                  static_cast<tjs_int>(fbH));
-            }
-        }
-
-        // Upload texture data to our blit texture
-        // Check if the texture is already a GPU-resident OGL texture.
-        // If so, skip the expensive CPU→GPU upload and use it directly.
+        // ── Phase 1: Prepare the blit source texture ──────────────
+        // This MUST happen BEFORE BindRenderTarget(), because
+        // GetScanLineForRead() internally calls TVPSetRenderTarget()
+        // which changes the FBO binding. We need the engine's FBO
+        // to be active for reading pixels, then switch to IOSurface
+        // FBO for the actual blit.
         const uint32_t nativeGLTex = tex->GetNativeGLTextureId();
         GLuint blitSrcTexture;
 
         if (nativeGLTex != 0) {
             // GPU fast-path: the composited scene is already in a GL texture.
-            // Bind it directly — no pixel readback or upload needed.
+            // We must detach it from the engine's FBO first to avoid
+            // sampling a texture that is still an FBO attachment.
+            // TVPSetRenderTarget(0) will unbind any texture from the engine FBO.
+            extern void TVPSetRenderTarget(GLuint);
+
+            TVPSetRenderTarget(0);
             blitSrcTexture = static_cast<GLuint>(nativeGLTex);
         } else {
             // CPU fallback: read pixel data and upload to our blit texture.
@@ -238,7 +187,10 @@ public:
             const tjs_int pitch = tex->GetPitch();
             const void* pixelData = tex->GetPixelData();
             if (!pixelData) {
-                // Fallback: read line by line
+                // Fallback: read line by line via GetScanLineForRead.
+                // NOTE: This may call TVPSetRenderTarget() internally,
+                // which changes the current FBO binding — that's fine
+                // because we haven't bound the IOSurface FBO yet.
                 if (blit_pixel_buf_.size() < static_cast<size_t>(tw * th * 4)) {
                     blit_pixel_buf_.resize(tw * th * 4);
                 }
@@ -275,6 +227,62 @@ public:
             }
         }
 
+        // ── Phase 2: Bind IOSurface render target and blit ───────
+        // Now that the source texture is ready, switch to the
+        // IOSurface FBO (or Pbuffer) for the actual blit output.
+        egl.BindRenderTarget();
+
+        // Determine the actual render target dimensions
+        uint32_t fbW, fbH;
+        if (egl.HasIOSurface()) {
+            fbW = egl.GetIOSurfaceWidth();
+            fbH = egl.GetIOSurfaceHeight();
+        } else {
+            fbW = egl.GetWidth();
+            fbH = egl.GetHeight();
+        }
+        // Compute letterbox/pillarbox viewport to preserve game aspect ratio.
+        float texAspect = static_cast<float>(tw) / static_cast<float>(th);
+        float fbAspect  = static_cast<float>(fbW) / static_cast<float>(fbH);
+        GLsizei vpX = 0, vpY = 0;
+        GLsizei vpW = static_cast<GLsizei>(fbW);
+        GLsizei vpH = static_cast<GLsizei>(fbH);
+        if (texAspect > fbAspect) {
+            vpW = static_cast<GLsizei>(fbW);
+            vpH = static_cast<GLsizei>(static_cast<float>(fbW) / texAspect);
+            vpY = static_cast<GLsizei>((fbH - vpH) / 2);
+        } else if (texAspect < fbAspect) {
+            vpH = static_cast<GLsizei>(fbH);
+            vpW = static_cast<GLsizei>(static_cast<float>(fbH) * texAspect);
+            vpX = static_cast<GLsizei>((fbW - vpW) / 2);
+        }
+
+        // Clear entire framebuffer to black (produces the letterbox bars)
+        glViewport(0, 0, static_cast<GLsizei>(fbW), static_cast<GLsizei>(fbH));
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        // Set viewport to the aspect-correct sub-region
+        glViewport(vpX, vpY, vpW, vpH);
+
+        // Update DrawDevice dest rect so coordinate transforms
+        // (surface pixels → game layer) work correctly with letterbox offset.
+        if (owner_) {
+            auto* dd = owner_->GetDrawDevice();
+            if (dd) {
+                tTVPRect dest;
+                dest.left   = static_cast<tjs_int>(vpX);
+                dest.top    = static_cast<tjs_int>(vpY);
+                dest.right  = static_cast<tjs_int>(vpX + vpW);
+                dest.bottom = static_cast<tjs_int>(vpY + vpH);
+                dd->SetDestRectangle(dest);
+                dd->SetClipRectangle(dest);
+                dd->SetViewport(dest);
+                dd->SetWindowSize(static_cast<tjs_int>(fbW),
+                                  static_cast<tjs_int>(fbH));
+            }
+        }
+
         // Bind the source texture for the fullscreen blit
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, blitSrcTexture);
@@ -288,6 +296,20 @@ public:
         // texture is already in OGL convention (bottom-up), so we may need
         // to flip when rendering to IOSurface but not to Pbuffer.
         glUniform1f(blit_flipy_uniform_, egl.HasIOSurface() ? 1.0f : 0.0f);
+
+        // Compute UV scale to handle power-of-two textures.
+        // The engine texture's logical size (tw x th) may be smaller
+        // than the actual GL texture (internalW x internalH).
+        float uvScaleU = 1.0f, uvScaleV = 1.0f;
+        if (nativeGLTex != 0) {
+            const tjs_uint intW = tex->GetInternalWidth();
+            const tjs_uint intH = tex->GetInternalHeight();
+            if (intW > 0 && intH > 0) {
+                uvScaleU = static_cast<float>(tw) / static_cast<float>(intW);
+                uvScaleV = static_cast<float>(th) / static_cast<float>(intH);
+            }
+        }
+        glUniform2f(blit_uvscale_uniform_, uvScaleU, uvScaleV);
 
         glBindBuffer(GL_ARRAY_BUFFER, blit_vbo_);
         glEnableVertexAttribArray(0);
@@ -377,15 +399,17 @@ private:
     void EnsureBlitResources() {
         if (blit_program_ != 0) return;
 
-        // Vertex shader: fullscreen quad with optional Y flip
+        // Vertex shader: fullscreen quad with optional Y flip and UV scale
         const char* vs_src = R"(#version 300 es
             layout(location = 0) in vec2 aPos;
             layout(location = 1) in vec2 aUV;
             uniform float uFlipY;
+            uniform vec2 uUVScale;
             out vec2 vUV;
             void main() {
                 gl_Position = vec4(aPos, 0.0, 1.0);
-                vUV = vec2(aUV.x, mix(aUV.y, 1.0 - aUV.y, uFlipY));
+                vec2 uv = aUV * uUVScale;
+                vUV = vec2(uv.x, mix(uv.y, uUVScale.y - uv.y, uFlipY));
             }
         )";
 
@@ -434,6 +458,7 @@ private:
 
         blit_tex_uniform_ = glGetUniformLocation(blit_program_, "uTex");
         blit_flipy_uniform_ = glGetUniformLocation(blit_program_, "uFlipY");
+        blit_uvscale_uniform_ = glGetUniformLocation(blit_program_, "uUVScale");
 
         // Fullscreen quad: position (x,y) + texcoord (u,v)
         // Y-flipped: top-left of texture → top-left of screen
@@ -486,6 +511,7 @@ private:
     tjs_uint blit_tex_h_ = 0;   // Last allocated texture height
     GLint  blit_tex_uniform_ = -1;
     GLint  blit_flipy_uniform_ = -1;
+    GLint  blit_uvscale_uniform_ = -1;
     std::vector<uint8_t> blit_pixel_buf_;
 };
 
