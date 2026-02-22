@@ -12,6 +12,7 @@
 #include "ComplexRect.h"
 #include "EventImpl.h"
 #include "WindowImpl.h"
+#include "RenderManager.h"
 
 #define ZeroMemory(p, n) memset(p, 0, n);
 // #include <d3d9.h>
@@ -540,9 +541,9 @@ void tTVPBasicDrawDevice::Show() {
         iWindowLayer *form = Window->GetForm();
         if(form && !Managers.empty()) {
             iTVPBaseBitmap *buf = Managers.back()->GetDrawBuffer();
-            if(buf)
-
+            if(buf) {
                 form->UpdateDrawBuffer(buf->GetTexture());
+            }
         }
     }
 #if 0

@@ -1066,6 +1066,10 @@ public:
         return true;
     }
 
+    uint32_t GetNativeGLTextureId() const override {
+        return static_cast<uint32_t>(texture);
+    }
+
     const void *GetScanLineForRead(tjs_uint l) override;
 
     tjs_uint32 GetPoint(int x, int y) override {

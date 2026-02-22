@@ -20,6 +20,10 @@
 // Forward declaration — defined in stubs/ui_stubs.cpp
 void TVPInitUIExtension();
 
+// Forward declaration — forces linker to include the OpenGL render manager
+// translation unit (which would otherwise be dead-stripped in static library builds)
+extern void TVPForceRegisterOpenGLRenderManager();
+
 extern "C" void SDL_SetMainReady();
 extern std::thread::id TVPMainThreadID;
 std::string TVPGetCurrentLanguage();
@@ -49,6 +53,11 @@ bool TVPEngineBootstrap::Initialize(uint32_t width, uint32_t height) {
     // 2. Create ANGLE EGL context for headless rendering
     InitializeGraphics(width, height);
     spdlog::default_logger()->flush();
+
+    // 2.5. Force-link the OpenGL render manager so it survives static library
+    //      dead-stripping.  Must happen after EGL context is ready but before
+    //      TVPGetRenderManager() is first called.
+    TVPForceRegisterOpenGLRenderManager();
 
     // 3. Initialize UI extensions
     TVPInitUIExtension();

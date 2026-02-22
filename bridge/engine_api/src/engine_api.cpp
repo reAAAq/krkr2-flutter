@@ -30,6 +30,7 @@
 #include "visual/ogl/ogl_common.h"
 #include "visual/ogl/krkr_egl_context.h"
 #include "visual/impl/WindowImpl.h"
+#include "visual/RenderManager.h"
 
 int TVPDrawSceneOnce(int interval);
 
@@ -608,6 +609,14 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
     ::Application->Run();
   }
   ::TVPDrawSceneOnce(0);
+
+  // Process deferred texture deletions. iTVPTexture2D::Release() uses
+  // delayed deletion — textures are queued in _toDeleteTextures and only
+  // freed when RecycleProcess() is called. Without this, every texture
+  // released during the frame (via Independ/SetSize/Recreate) accumulates
+  // indefinitely, causing a memory leak — especially visible in OpenGL
+  // mode where each texture also holds GPU resources.
+  iTVPTexture2D::RecycleProcess();
 
   if (TVPTerminated) {
     return SetHandleErrorAndReturnLocked(

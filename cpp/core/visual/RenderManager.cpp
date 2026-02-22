@@ -2608,7 +2608,9 @@ iTVPRenderManager::GetRenderMethod(tjs_int opa, bool hda,
 }
 
 void iTVPRenderManager::Initialize() {
-    RenderMethodCache = new tRenderMethodCache(this);
+    if (!RenderMethodCache) {
+        RenderMethodCache = new tRenderMethodCache(this);
+    }
 }
 
 void iTVPRenderManager::RegisterRenderMethod(const char *name,
@@ -3757,13 +3759,7 @@ public:
                            rc);
             tmp->Release();
         } else {
-            // TVPThrowExceptionMessage(TJS_W("OperateTriangles:
-            // unsupported
-            // draw mode")); 			iTVPTexture2D *tmp = new
-            // tTVPSoftwareTexture2D(nullptr, 0, rcclip.get_width(),
-            // rcclip.get_height(), TVPTextureFormat::RGBA);
-            // 			memset(tmp->GetScanLineForWrite(0), 0,
-            // tmp->GetPitch() * rcclip.get_height());
+            // General triangle path with InternalAffineBlt
             TAffuncFunc affineloop = GetStretchFunction(
                 static_cast<tTVPRenderMethod_Software *>(method));
 
@@ -4440,6 +4436,10 @@ public:
         tjs_uint8 *dest = (tjs_uint8 *)dst->GetScanLineForWrite(yc);
         const tjs_uint8 *src = (const tjs_uint8 *)_src->GetScanLineForRead(0);
 
+        if (!dest || !src) {
+            return 0;
+        }
+
         tTVPBBStretchType mode = /*param->mode*/ StretchType;
         tTVPBBStretchType type = (tTVPBBStretchType)(mode & stTypeMask);
         // tTVPBBBltMethod method = param->method;
@@ -4928,9 +4928,16 @@ iTVPRenderManager *TVPGetRenderManager(const ttstr &name) {
 iTVPRenderManager *TVPGetRenderManager() {
     static iTVPRenderManager *_RenderManager;
     if(!_RenderManager) {
-        ttstr str =
-            IndividualConfigManager::GetInstance()->GetValue<std::string>(
-                "renderer", "software");
+        // Prefer command-line option set via engine_set_option
+        tTJSVariant val;
+        ttstr str;
+        if(TVPGetCommandLine(TJS_W("renderer"), &val)) {
+            str = val;
+        }
+        if(str.IsEmpty()) {
+            str = IndividualConfigManager::GetInstance()
+                      ->GetValue<std::string>("renderer", "opengl");
+        }
         _RenderManager = TVPGetRenderManager(str);
     }
     return _RenderManager;
@@ -4942,7 +4949,11 @@ bool TVPIsSoftwareRenderManager() {
 }
 
 iTVPRenderManager *TVPGetSoftwareRenderManager() { // for province image process
-    static tTVPSoftwareRenderManager *mgr = new tTVPSoftwareRenderManager;
+    static tTVPSoftwareRenderManager *mgr = []() {
+        auto *m = new tTVPSoftwareRenderManager;
+        m->Initialize();
+        return m;
+    }();
     return mgr;
 }
 

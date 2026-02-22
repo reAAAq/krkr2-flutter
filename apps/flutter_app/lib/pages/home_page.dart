@@ -25,6 +25,7 @@ class _HomePageState extends State<HomePage> {
   static const String _engineModeKey = 'krkr2_engine_mode';
   static const String _perfOverlayKey = 'krkr2_perf_overlay';
   static const String _targetFpsKey = 'krkr2_target_fps';
+  static const String _rendererKey = 'krkr2_renderer';
   static const List<int> _fpsOptions = [30, 60, 120];
   static const int _defaultFps = 60;
 
@@ -37,6 +38,7 @@ class _HomePageState extends State<HomePage> {
   bool _builtInAvailable = false;
   bool _perfOverlay = false;
   int _targetFps = _defaultFps;
+  String _renderer = 'opengl'; // 'opengl' or 'software'
 
   /// Resolve the built-in engine dylib path from the app bundle.
   /// On macOS: `<executable>/../Frameworks/libengine_api.dylib`
@@ -86,6 +88,7 @@ class _HomePageState extends State<HomePage> {
     _perfOverlay = prefs.getBool(_perfOverlayKey) ?? false;
     _targetFps = prefs.getInt(_targetFpsKey) ?? _defaultFps;
     if (!_fpsOptions.contains(_targetFps)) _targetFps = _defaultFps;
+    _renderer = prefs.getString(_rendererKey) ?? 'opengl';
     await _gameManager.load();
 
     // iOS: ensure Documents/Games directory exists and auto-scan
@@ -332,6 +335,7 @@ class _HomePageState extends State<HomePage> {
     String? tempCustomPath = _customDylibPath;
     bool tempPerfOverlay = _perfOverlay;
     int tempTargetFps = _targetFps;
+    String tempRenderer = _renderer;
     await showDialog<void>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -376,6 +380,45 @@ class _HomePageState extends State<HomePage> {
                   ..._buildCustomSection(ctx, tempCustomPath, (path) {
                     setDialogState(() => tempCustomPath = path);
                   }),
+                const SizedBox(height: 16),
+                const Divider(),
+                const SizedBox(height: 8),
+                Text(
+                  'Render Pipeline',
+                  style: Theme.of(ctx).textTheme.titleSmall,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Requires restarting the game to take effect',
+                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(ctx)
+                            .colorScheme
+                            .onSurface
+                            .withValues(alpha: 0.6),
+                      ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment<String>(
+                        value: 'opengl',
+                        label: Text('OpenGL'),
+                        icon: Icon(Icons.memory),
+                      ),
+                      ButtonSegment<String>(
+                        value: 'software',
+                        label: Text('Software'),
+                        icon: Icon(Icons.computer),
+                      ),
+                    ],
+                    selected: {tempRenderer},
+                    onSelectionChanged: (Set<String> selected) {
+                      setDialogState(() => tempRenderer = selected.first);
+                    },
+                  ),
+                ),
                 const SizedBox(height: 16),
                 const Divider(),
                 const SizedBox(height: 8),
@@ -452,12 +495,14 @@ class _HomePageState extends State<HomePage> {
                 }
                 await prefs.setBool(_perfOverlayKey, tempPerfOverlay);
                 await prefs.setInt(_targetFpsKey, tempTargetFps);
+                await prefs.setString(_rendererKey, tempRenderer);
                 if (mounted) {
                   setState(() {
                     _engineMode = tempMode;
                     _customDylibPath = tempCustomPath;
                     _perfOverlay = tempPerfOverlay;
                     _targetFps = tempTargetFps;
+                    _renderer = tempRenderer;
                   });
                 }
                 if (ctx.mounted) Navigator.pop(ctx);

@@ -45,25 +45,19 @@ void BindTexture2D(GLuint textureId) {
 
 void BindTexture2DN(unsigned int slot, GLuint textureId) {
     GLenum unit = GL_TEXTURE0 + slot;
-    if (s_activeTextureUnit != unit) {
-        s_activeTextureUnit = unit;
-        glActiveTexture(unit);
-    }
+    // Always call GL directly: external code (e.g. Flutter) may
+    // reset GL state behind our back, making cached values stale.
+    s_activeTextureUnit = unit;
+    glActiveTexture(unit);
     if (slot < kMaxTextureUnits) {
-        if (s_boundTextures[slot] != textureId) {
-            s_boundTextures[slot] = textureId;
-            glBindTexture(GL_TEXTURE_2D, textureId);
-        }
-    } else {
-        glBindTexture(GL_TEXTURE_2D, textureId);
+        s_boundTextures[slot] = textureId;
     }
+    glBindTexture(GL_TEXTURE_2D, textureId);
 }
 
 void ActiveTexture(GLenum textureUnit) {
-    if (s_activeTextureUnit != textureUnit) {
-        s_activeTextureUnit = textureUnit;
-        glActiveTexture(textureUnit);
-    }
+    s_activeTextureUnit = textureUnit;
+    glActiveTexture(textureUnit);
 }
 
 void DeleteTexture(GLuint textureId) {
@@ -81,10 +75,8 @@ void DeleteTexture(GLuint textureId) {
 // ---------------------------------------------------------------------------
 
 void UseProgram(GLuint program) {
-    if (s_currentProgram != program) {
-        s_currentProgram = program;
-        glUseProgram(program);
-    }
+    s_currentProgram = program;
+    glUseProgram(program);
 }
 
 // ---------------------------------------------------------------------------
@@ -92,18 +84,13 @@ void UseProgram(GLuint program) {
 // ---------------------------------------------------------------------------
 
 void EnableVertexAttribs(unsigned int flags) {
-    // Diff against the currently enabled set
-    unsigned int diff = s_enabledVertexAttribs ^ flags;
-    if (diff == 0) return;
-
+    // Always call GL directly to avoid stale cache issues.
     for (int i = 0; i < kMaxVertexAttribs; ++i) {
         unsigned int bit = 1u << i;
-        if (diff & bit) {
-            if (flags & bit) {
-                glEnableVertexAttribArray(i);
-            } else {
-                glDisableVertexAttribArray(i);
-            }
+        if (flags & bit) {
+            glEnableVertexAttribArray(i);
+        } else if (s_enabledVertexAttribs & bit) {
+            glDisableVertexAttribArray(i);
         }
     }
     s_enabledVertexAttribs = flags;

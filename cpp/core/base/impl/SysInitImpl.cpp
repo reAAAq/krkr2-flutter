@@ -288,9 +288,16 @@ void TVPAfterSystemInit() {
         }
     }
     // check TVPGraphicSplitOperation option
-    std::string _val =
-        IndividualConfigManager::GetInstance()->GetValue<std::string>(
-            "renderer", "software");
+    // Prefer command-line option set via engine_set_option
+    std::string _val;
+    tTJSVariant renderer_opt;
+    if(TVPGetCommandLine(TJS_W("renderer"), &renderer_opt)) {
+        _val = ttstr(renderer_opt).AsStdString();
+    }
+    if(_val.empty()) {
+        _val = IndividualConfigManager::GetInstance()->GetValue<std::string>(
+            "renderer", "opengl");
+    }
     if(_val != "software") {
         TVPGraphicSplitOperationType = gsotNone;
     } else {
@@ -497,6 +504,9 @@ static void PushConfigFileOptions(const std::vector<std::string> *options) {
 }
 
 //---------------------------------------------------------------------------
+// Options set via engine_set_option before TVPProgramArguments is initialized
+static std::vector<std::pair<ttstr, ttstr>> TVPEarlySetOptions;
+
 static void TVPInitProgramArgumentsAndDataPath(bool stop_after_datapath_got) {
     if(!TVPProgramArgumentsInit) {
         TVPProgramArgumentsInit = true;
@@ -560,6 +570,13 @@ static void TVPInitProgramArgumentsAndDataPath(bool stop_after_datapath_got) {
         // set log output directory
         TVPSetLogLocation(TVPNativeDataPath);
 
+        // merge early-set options (from engine_set_option before init)
+        for (auto it = TVPEarlySetOptions.rbegin(); it != TVPEarlySetOptions.rend(); ++it) {
+            TVPProgramArguments.insert(TVPProgramArguments.begin(),
+                                       it->first + TJS_W("=") + it->second);
+        }
+        TVPEarlySetOptions.clear();
+
         // increment TVPCommandLineArgumentGeneration
         TVPCommandLineArgumentGeneration++;
     }
@@ -608,7 +625,19 @@ bool TVPGetCommandLine(const tjs_char *name, tTJSVariant *value) {
 
 //---------------------------------------------------------------------------
 void TVPSetCommandLine(const tjs_char *name, const ttstr &value) {
-    //	TVPInitProgramArgumentsAndDataPath(false);
+    // If not yet initialized, store in early options to be merged after init
+    if (!TVPProgramArgumentsInit) {
+        ttstr nameStr(name);
+        // Update existing early option or add new one
+        for (auto &opt : TVPEarlySetOptions) {
+            if (opt.first == nameStr) {
+                opt.second = value;
+                return;
+            }
+        }
+        TVPEarlySetOptions.push_back({nameStr, value});
+        return;
+    }
 
     tjs_int namelen = (tjs_int)TJS_strlen(name);
     std::vector<ttstr>::iterator i;
