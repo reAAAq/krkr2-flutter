@@ -143,6 +143,14 @@ public:
         return true;
     }
 
+    /**
+     * Returns the native OpenGL texture ID if this texture is backed by
+     * a GPU-resident GL texture (e.g. tTVPOGLTexture2D).
+     * Returns 0 for software textures (CPU memory backed).
+     * Used by UpdateDrawBuffer to skip CPU→GPU upload when possible.
+     */
+    virtual uint32_t GetNativeGLTextureId() const { return 0; }
+
     static void RecycleProcess();
 };
 
