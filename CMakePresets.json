@@ -125,6 +125,45 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+    {
+      "name": "iOS Config",
+      "generator": "Ninja",
+      "hidden": true,
+      "cacheVariables": {
+        "IOS": true,
+        "CMAKE_SYSTEM_NAME": "iOS",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "15.0",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "VCPKG_TARGET_TRIPLET": "arm64-ios",
+        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/vcpkg/triplets",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": true,
+        "BUILD_TOOLS": false,
+        "ENABLE_TESTS": false
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "iOS Debug Config",
+      "inherits": "iOS Config",
+      "binaryDir": "${sourceDir}/out/ios/debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "iOS Release Config",
+      "inherits": "iOS Config",
+      "binaryDir": "${sourceDir}/out/ios/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
     }
   ],
   "buildPresets": [
@@ -151,6 +190,14 @@
     {
       "name": "MacOS Release Build",
       "configurePreset": "MacOS Release Config"
+    },
+    {
+      "name": "iOS Debug Build",
+      "configurePreset": "iOS Debug Config"
+    },
+    {
+      "name": "iOS Release Build",
+      "configurePreset": "iOS Release Config"
     }
   ]
 }

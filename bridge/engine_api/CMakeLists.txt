@@ -2,12 +2,25 @@ cmake_minimum_required(VERSION 3.16)
 
 project(engine_api LANGUAGES C CXX)
 
-add_library(engine_api SHARED
-    src/engine_api.cpp
-)
+if(IOS)
+    add_library(engine_api STATIC
+        src/engine_api.cpp
+    )
+else()
+    add_library(engine_api SHARED
+        src/engine_api.cpp
+    )
+endif()
 
 target_compile_features(engine_api PRIVATE cxx_std_17)
-target_compile_definitions(engine_api PRIVATE ENGINE_API_BUILD_SHARED)
+
+if(IOS)
+    # iOS static library: ensure symbols are visible so Dart FFI
+    # DynamicLibrary.process() can find them when linked into Runner
+    target_compile_definitions(engine_api PRIVATE ENGINE_API_EXPORT_SYMBOLS)
+else()
+    target_compile_definitions(engine_api PRIVATE ENGINE_API_BUILD_SHARED)
+endif()
 target_include_directories(engine_api
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include

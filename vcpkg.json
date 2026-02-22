@@ -34,7 +34,7 @@
       "features": [
         "metal"
       ],
-      "platform": "osx"
+      "platform": "osx | ios"
     },
     {
       "name": "angle",

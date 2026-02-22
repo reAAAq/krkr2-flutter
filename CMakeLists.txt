@@ -56,22 +56,8 @@ elseif(WINDOWS)
         ${CMAKE_CURRENT_SOURCE_DIR}/platforms/windows/game.rc
     )
 elseif(IOS)
-#        list(APPEND GAME_HEADER
-#                proj.ios_mac/ios/AppController.h
-#                proj.ios_mac/ios/RootViewController.h
-#        )
-#        set(APP_UI_RES
-#                proj.ios_mac/ios/LaunchScreen.storyboard
-#                proj.ios_mac/ios/LaunchScreenBackground.png
-#                proj.ios_mac/ios/Images.xcassets
-#        )
-#        list(APPEND GAME_SOURCE
-#                proj.ios_mac/ios/main.m
-#                proj.ios_mac/ios/AppController.mm
-#                proj.ios_mac/ios/RootViewController.mm
-#                proj.ios_mac/ios/Prefix.pch
-#                ${APP_UI_RES}
-#        )
+    # iOS uses Flutter as the app shell; only build engine libraries.
+    # engine_api is built as a static library and linked into the Flutter Runner.
 elseif(MACOS)
     # macOS uses Flutter as the app shell; only build engine libraries.
     # The standalone krkr2 executable (cocos2dx) is no longer produced.
