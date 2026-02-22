@@ -38,7 +38,13 @@ class _HomePageState extends State<HomePage> {
 
   /// Resolve the built-in engine dylib path from the app bundle.
   /// On macOS: `<executable>/../Frameworks/libengine_api.dylib`
+  /// On iOS: engine is statically linked, so no dylib file needed.
   String? _resolveBuiltInDylibPath() {
+    // On iOS the engine is statically linked into the app binary.
+    // DynamicLibrary.process() is used at FFI level, no file path needed.
+    if (Platform.isIOS) {
+      return '__static_linked__';
+    }
     try {
       final executablePath = Platform.resolvedExecutable;
       final execDir = File(executablePath).parent.path;
@@ -50,8 +56,13 @@ class _HomePageState extends State<HomePage> {
   }
 
   /// The effective dylib path based on current engine mode.
+  /// On iOS with built-in mode, returns null (engine is statically linked
+  /// and will be loaded via DynamicLibrary.process()).
   String? get _effectiveDylibPath {
     if (_engineMode == EngineMode.builtIn) {
+      // On iOS the engine is statically linked; return null so that
+      // EngineFfiBridge falls back to DynamicLibrary.process().
+      if (Platform.isIOS) return null;
       return _builtInDylibPath;
     }
     return _customDylibPath;
@@ -163,9 +174,14 @@ class _HomePageState extends State<HomePage> {
 
   void _launchGame(GameInfo game) {
     final dylibPath = _effectiveDylibPath;
-    if (dylibPath == null) {
+    // On iOS with built-in mode, dylibPath is null because the engine is
+    // statically linked. This is expected — EngineFfiBridge will use
+    // DynamicLibrary.process() to resolve symbols.
+    final isStaticLinkedBuiltIn =
+        Platform.isIOS && _engineMode == EngineMode.builtIn;
+    if (dylibPath == null && !isStaticLinkedBuiltIn) {
       final msg = _engineMode == EngineMode.builtIn
-          ? 'Built-in engine not found. Please use build_macos.sh to bundle the engine, or switch to Custom mode in Settings.'
+          ? 'Built-in engine not found. Please use the build script to bundle the engine, or switch to Custom mode in Settings.'
           : 'Engine dylib not set. Please configure it in Settings first.';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -379,7 +395,7 @@ class _HomePageState extends State<HomePage> {
                     Padding(
                       padding: const EdgeInsets.only(top: 4),
                       child: Text(
-                        'Use build_macos.sh to compile and bundle the engine into the app.',
+                        'Use the build script to compile and bundle the engine into the app.',
                         style: TextStyle(
                           fontSize: 11,
                           color: Theme.of(ctx)
