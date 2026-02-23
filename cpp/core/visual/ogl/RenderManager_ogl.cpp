@@ -109,7 +109,9 @@ static void TVPInitGLExtensionInfo() {
     if(TVPGLExtensionInfoInited)
         return;
     TVPGLExtensionInfoInited = true;
-    std::string gl_extensions = (const char *)glGetString(GL_EXTENSIONS);
+    const char *ext_str = (const char *)glGetString(GL_EXTENSIONS);
+    if(!ext_str) return; // No GL context (e.g. Flutter mode without EGL surface)
+    std::string gl_extensions = ext_str;
     const char *p = gl_extensions.c_str();
     for(char &c : gl_extensions) {
         if(c == ' ') {
@@ -271,28 +273,35 @@ static void TVPInitGLExtensionFunc() {
 std::string TVPGetOpenGLInfo() {
     //	TVPInitGLExtensionInfo();
     std::unordered_set<std::string> Extensions;
-    std::string gl_extensions = (const char *)glGetString(GL_EXTENSIONS);
-    const char *p = gl_extensions.c_str();
-    for(char &c : gl_extensions) {
-        if(c == ' ') {
-            c = 0;
-            Extensions.emplace(p);
-            p = &c;
-            ++p;
+    const char *ext_raw = (const char *)glGetString(GL_EXTENSIONS);
+    if(ext_raw) {
+        std::string gl_extensions = ext_raw;
+        const char *p = gl_extensions.c_str();
+        for(char &c : gl_extensions) {
+            if(c == ' ') {
+                c = 0;
+                Extensions.emplace(p);
+                p = &c;
+                ++p;
+            }
         }
+        if(*p)
+            Extensions.emplace(p);
     }
-    if(*p)
-        Extensions.emplace(p);
 
+    auto safe_gl_str = [](GLenum name) -> const char * {
+        const char *s = (const char *)glGetString(name);
+        return s ? s : "(unavailable)";
+    };
     std::stringstream ret;
     ret << "Renderer : ";
-    ret << glGetString(GL_RENDERER);
+    ret << safe_gl_str(GL_RENDERER);
     ret << "\n";
     ret << "Vendor : ";
-    ret << glGetString(GL_VENDOR);
+    ret << safe_gl_str(GL_VENDOR);
     ret << "\n";
     ret << "Version : ";
-    ret << glGetString(GL_VERSION);
+    ret << safe_gl_str(GL_VERSION);
     ret << "\n";
     GLint maxTextSize;
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTextSize);

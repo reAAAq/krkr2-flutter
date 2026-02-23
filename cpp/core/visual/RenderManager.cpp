@@ -4925,6 +4925,8 @@ iTVPRenderManager *TVPGetRenderManager(const ttstr &name) {
     return mgr;
 }
 
+static bool _RenderManagerInitialized = false;
+
 iTVPRenderManager *TVPGetRenderManager() {
     static iTVPRenderManager *_RenderManager;
     if(!_RenderManager) {
@@ -4939,11 +4941,13 @@ iTVPRenderManager *TVPGetRenderManager() {
                       ->GetValue<std::string>("renderer", "opengl");
         }
         _RenderManager = TVPGetRenderManager(str);
+        _RenderManagerInitialized = true;
     }
     return _RenderManager;
 }
 
 bool TVPIsSoftwareRenderManager() {
+    if(!_RenderManagerInitialized) return true; // assume software if not yet initialized
     static bool ret = TVPGetRenderManager()->IsSoftware();
     return ret;
 }

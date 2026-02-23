@@ -21,6 +21,12 @@
 #endif // TARGET_OS_OSX
 #endif // __APPLE__
 
+#if defined(__ANDROID__)
+#include <EGL/eglext.h>
+#include <android/native_window.h>
+#include <android/native_window_jni.h>
+#endif // __ANDROID__
+
 namespace krkr {
 
 // ---------------------------------------------------------------------------
@@ -55,8 +61,13 @@ bool EGLContextManager::Initialize(uint32_t width, uint32_t height) {
     spdlog::info("EGL version string: {}", eglQueryString(display_, EGL_VERSION));
 
     // Choose a config that supports Pbuffer + GLES2
+    // On Android, also require EGL_WINDOW_BIT for SurfaceTexture rendering
     EGLint configAttribs[] = {
+#if defined(__ANDROID__)
+        EGL_SURFACE_TYPE,    EGL_PBUFFER_BIT | EGL_WINDOW_BIT,
+#else
         EGL_SURFACE_TYPE,    EGL_PBUFFER_BIT,
+#endif
         EGL_RED_SIZE,        8,
         EGL_GREEN_SIZE,      8,
         EGL_BLUE_SIZE,       8,
@@ -129,6 +140,7 @@ bool EGLContextManager::Initialize(uint32_t width, uint32_t height) {
 }
 
 void EGLContextManager::Destroy() {
+    DestroyNativeWindowResources();
     if (display_ != EGL_NO_DISPLAY) {
         eglMakeCurrent(display_, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
 
@@ -377,6 +389,11 @@ void EGLContextManager::BindRenderTarget() {
         glBindFramebuffer(GL_FRAMEBUFFER, iosurface_fbo_);
         glViewport(0, 0, static_cast<GLsizei>(iosurface_width_),
                    static_cast<GLsizei>(iosurface_height_));
+    } else if (native_window_ != nullptr && window_surface_ != EGL_NO_SURFACE) {
+        // Android WindowSurface mode: render to default FBO (0)
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glViewport(0, 0, static_cast<GLsizei>(window_width_),
+                   static_cast<GLsizei>(window_height_));
     } else {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glViewport(0, 0, static_cast<GLsizei>(width_),
@@ -409,6 +426,89 @@ void EGLContextManager::DestroyIOSurfaceResources() {
     iosurface_width_ = 0;
     iosurface_height_ = 0;
     iosurface_id_ = 0;
+}
+
+// ---------------------------------------------------------------------------
+// Android WindowSurface attachment (SurfaceTexture zero-copy rendering)
+// ---------------------------------------------------------------------------
+
+bool EGLContextManager::AttachNativeWindow(void* window,
+                                            uint32_t width, uint32_t height) {
+#if defined(__ANDROID__)
+    if (!window || width == 0 || height == 0) {
+        spdlog::error("AttachNativeWindow: invalid parameters (window={}, {}x{})",
+                      window != nullptr, width, height);
+        return false;
+    }
+    if (context_ == EGL_NO_CONTEXT) {
+        spdlog::error("AttachNativeWindow: EGL context not initialized");
+        return false;
+    }
+
+    // Clean up previous WindowSurface resources
+    DestroyNativeWindowResources();
+
+    auto* nativeWindow = static_cast<ANativeWindow*>(window);
+    ANativeWindow_acquire(nativeWindow);
+
+    // Create EGL WindowSurface from ANativeWindow
+    EGLint attribs[] = { EGL_NONE };
+    window_surface_ = eglCreateWindowSurface(display_, config_,
+                                              nativeWindow, attribs);
+    if (window_surface_ == EGL_NO_SURFACE) {
+        spdlog::error("AttachNativeWindow: eglCreateWindowSurface failed: 0x{:x}",
+                      eglGetError());
+        ANativeWindow_release(nativeWindow);
+        return false;
+    }
+
+    // Switch context to WindowSurface
+    if (!eglMakeCurrent(display_, window_surface_, window_surface_, context_)) {
+        spdlog::error("AttachNativeWindow: eglMakeCurrent(WindowSurface) failed: 0x{:x}",
+                      eglGetError());
+        eglDestroySurface(display_, window_surface_);
+        window_surface_ = EGL_NO_SURFACE;
+        ANativeWindow_release(nativeWindow);
+        return false;
+    }
+
+    native_window_ = nativeWindow;
+    window_width_ = width;
+    window_height_ = height;
+
+    spdlog::info("AttachNativeWindow: success {}x{}", width, height);
+    return true;
+#else
+    (void)window;
+    (void)width;
+    (void)height;
+    spdlog::error("AttachNativeWindow: not supported on this platform");
+    return false;
+#endif
+}
+
+void EGLContextManager::DetachNativeWindow() {
+    DestroyNativeWindowResources();
+    spdlog::info("DetachNativeWindow: reverted to Pbuffer mode");
+}
+
+void EGLContextManager::DestroyNativeWindowResources() {
+#if defined(__ANDROID__)
+    if (native_window_) {
+        // Revert to Pbuffer surface
+        if (surface_ != EGL_NO_SURFACE) {
+            eglMakeCurrent(display_, surface_, surface_, context_);
+        }
+        if (window_surface_ != EGL_NO_SURFACE) {
+            eglDestroySurface(display_, window_surface_);
+            window_surface_ = EGL_NO_SURFACE;
+        }
+        ANativeWindow_release(static_cast<ANativeWindow*>(native_window_));
+        native_window_ = nullptr;
+        window_width_ = 0;
+        window_height_ = 0;
+    }
+#endif
 }
 
 // ---------------------------------------------------------------------------

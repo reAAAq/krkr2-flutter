@@ -109,6 +109,43 @@ public:
      */
     uint32_t GetIOSurfaceHeight() const { return iosurface_height_; }
 
+    /**
+     * Attach an Android ANativeWindow as the render target.
+     * Creates an EGL WindowSurface and binds it as the primary surface.
+     * eglSwapBuffers() delivers frames directly to the SurfaceTexture.
+     *
+     * @param window  ANativeWindow* from ANativeWindow_fromSurface()
+     * @param width   Surface width in pixels
+     * @param height  Surface height in pixels
+     * @return true on success
+     */
+    bool AttachNativeWindow(void* window, uint32_t width, uint32_t height);
+
+    /**
+     * Detach the ANativeWindow, reverting to Pbuffer mode.
+     */
+    void DetachNativeWindow();
+
+    /**
+     * @return true if rendering to an ANativeWindow (Android SurfaceTexture).
+     */
+    bool HasNativeWindow() const { return native_window_ != nullptr; }
+
+    /**
+     * @return the EGL WindowSurface for eglSwapBuffers (Android).
+     */
+    EGLSurface GetWindowSurface() const { return window_surface_; }
+
+    /**
+     * @return the ANativeWindow width (0 if not attached).
+     */
+    uint32_t GetNativeWindowWidth() const { return window_width_; }
+
+    /**
+     * @return the ANativeWindow height (0 if not attached).
+     */
+    uint32_t GetNativeWindowHeight() const { return window_height_; }
+
     // Accessors
     uint32_t GetWidth()   const { return width_; }
     uint32_t GetHeight()  const { return height_; }
@@ -122,6 +159,7 @@ private:
     bool CreateSurface(uint32_t width, uint32_t height);
     void DestroySurface();
     void DestroyIOSurfaceResources();
+    void DestroyNativeWindowResources();
 
     EGLDisplay display_  = EGL_NO_DISPLAY;
     EGLSurface surface_  = EGL_NO_SURFACE;
@@ -139,6 +177,12 @@ private:
     uint32_t   iosurface_width_     = 0;
     uint32_t   iosurface_height_    = 0;
     uint32_t   iosurface_id_        = 0;
+
+    // Android WindowSurface resources (SurfaceTexture zero-copy rendering)
+    void*      native_window_       = nullptr; // ANativeWindow*
+    EGLSurface window_surface_      = EGL_NO_SURFACE;
+    uint32_t   window_width_        = 0;
+    uint32_t   window_height_       = 0;
 };
 
 /**
