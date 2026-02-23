@@ -65,6 +65,7 @@ struct engine_handle_s {
   bool iosurface_attached = false;
   bool native_window_attached = false;
   bool frame_rendered_this_tick = false;
+  uint64_t tick_count = 0;
 
   // Frame rate limiting (0 = unlimited / follow vsync)
   uint32_t fps_limit = 0;
@@ -625,6 +626,7 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
     return SetHandleErrorAndReturnLocked(impl, ENGINE_RESULT_INVALID_STATE,
                                          "engine is not in opened state");
   }
+  impl->tick_count += 1;
 
   while (!impl->pending_input_events.empty()) {
     const engine_input_event_t queued_event = impl->pending_input_events.front();
@@ -652,8 +654,30 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
       uint32_t win_w = 0, win_h = 0;
       krkr_GetSurfaceDimensions(&win_w, &win_h);
       auto& egl = krkr::GetEngineEGLContext();
-      if (egl.IsValid() && win_w > 0 && win_h > 0) {
-        if (egl.AttachNativeWindow(pending_window, win_w, win_h)) {
+      if (win_w > 0 && win_h > 0) {
+        bool attached = false;
+        if (!egl.IsValid()) {
+          // EGL context not yet initialized — use InitializeWithWindow
+          // to create EGL display + context + WindowSurface in one step,
+          // bypassing Pbuffer which may not be supported on this device.
+          AndroidInfoLog("engine_tick: EGL not valid, InitializeWithWindow %ux%u", win_w, win_h);
+          if (egl.InitializeWithWindow(pending_window, win_w, win_h)) {
+            attached = true;
+            AndroidInfoLog("engine_tick: InitializeWithWindow success");
+          } else {
+            AndroidInfoLog("engine_tick: InitializeWithWindow failed");
+          }
+        } else {
+          // EGL already initialized (Pbuffer) — attach WindowSurface
+          AndroidInfoLog("engine_tick: EGL valid, AttachNativeWindow %ux%u", win_w, win_h);
+          if (egl.AttachNativeWindow(pending_window, win_w, win_h)) {
+            attached = true;
+            AndroidInfoLog("engine_tick: AttachNativeWindow success");
+          } else {
+            AndroidInfoLog("engine_tick: AttachNativeWindow failed");
+          }
+        }
+        if (attached) {
           impl->native_window_attached = true;
           spdlog::info("engine_tick: auto-attached ANativeWindow {}x{}", win_w, win_h);
           AndroidInfoLog("engine_tick: auto-attached ANativeWindow %ux%u", win_w, win_h);
@@ -665,12 +689,16 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
                                 static_cast<tjs_int>(win_h));
             }
           }
-        } else {
-          spdlog::warn("engine_tick: failed to attach ANativeWindow");
         }
+      } else if (impl->tick_count % 120 == 0) {
+        AndroidInfoLog("engine_tick: pending ANativeWindow but size is 0 (%ux%u)",
+                       win_w, win_h);
       }
       // Release the ref acquired by krkr_GetNativeWindow()
       ANativeWindow_release(pending_window);
+    } else if (impl->tick_count % 180 == 0) {
+      AndroidInfoLog("engine_tick: waiting for ANativeWindow (tick=%llu)",
+                     static_cast<unsigned long long>(impl->tick_count));
     }
   } else {
     // Already attached — check if the JNI side has detached the window.
@@ -683,6 +711,7 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
       egl.DetachNativeWindow();
       impl->native_window_attached = false;
       spdlog::info("engine_tick: ANativeWindow detached, reverted to Pbuffer mode");
+      AndroidInfoLog("engine_tick: ANativeWindow detached -> Pbuffer");
     }
   }
 #endif
@@ -805,6 +834,17 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
 
   ClearHandleErrorLocked(impl);
   SetThreadError(nullptr);
+#if defined(__ANDROID__)
+  if (impl->tick_count % 120 == 0) {
+    AndroidInfoLog("engine_tick: tick=%llu rendered=%d serial=%llu native_window=%d iosurface=%d frame_ready=%d",
+                   static_cast<unsigned long long>(impl->tick_count),
+                   impl->frame_rendered_this_tick ? 1 : 0,
+                   static_cast<unsigned long long>(impl->frame_serial),
+                   impl->native_window_attached ? 1 : 0,
+                   impl->iosurface_attached ? 1 : 0,
+                   impl->frame_ready ? 1 : 0);
+  }
+#endif
   return ENGINE_RESULT_OK;
 }
 
@@ -969,9 +1009,11 @@ engine_result_t engine_set_surface_size(engine_handle_t handle,
   impl->frame_ready = false;
 
   // Propagate the new surface size to the EGL Pbuffer and viewport.
+  // Skip Pbuffer resize when using WindowSurface (Android) — the
+  // surface size is determined by the ANativeWindow/SurfaceTexture.
   if (g_runtime_active && g_runtime_owner == handle) {
     auto& egl = krkr::GetEngineEGLContext();
-    if (egl.IsValid()) {
+    if (egl.IsValid() && !egl.HasNativeWindow()) {
       const uint32_t cur_w = egl.GetWidth();
       const uint32_t cur_h = egl.GetHeight();
       if (cur_w != width || cur_h != height) {
