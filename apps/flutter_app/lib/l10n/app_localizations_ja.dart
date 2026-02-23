@@ -1,0 +1,252 @@
+// ignore: unused_import
+import 'package:intl/intl.dart' as intl;
+import 'app_localizations.dart';
+
+// ignore_for_file: type=lint
+
+/// The translations for Japanese (`ja`).
+class AppLocalizationsJa extends AppLocalizations {
+  AppLocalizationsJa([String locale = 'ja']) : super(locale);
+
+  @override
+  String get appTitle => 'KrKr2 ランチャー';
+
+  @override
+  String get settings => '設定';
+
+  @override
+  String get addGame => 'ゲームを追加';
+
+  @override
+  String get refresh => '更新';
+
+  @override
+  String get howToImport => 'インポート方法';
+
+  @override
+  String get noGamesYet => 'ゲームがまだ追加されていません';
+
+  @override
+  String get noGamesHintDesktop => '「ゲームを追加」をクリックしてゲームディレクトリを選択してください';
+
+  @override
+  String get noGamesHintIos =>
+      '「ファイル」アプリでゲームフォルダをコピーしてください：\niPhone内 > Krkr2 > Games\nその後「更新」をタップ';
+
+  @override
+  String get importGames => 'ゲームをインポート';
+
+  @override
+  String get importGamesDesc =>
+      '「ファイル」アプリを使用して、ゲームフォルダをこのアプリのディレクトリにコピーしてください：';
+
+  @override
+  String get importStep1 => '1. iPhoneの「ファイル」アプリを開く';
+
+  @override
+  String get importStep2 => '2. iPhone内 > Krkr2 > Games に移動';
+
+  @override
+  String get importStep3 => '3. ゲームフォルダをGamesディレクトリにコピー';
+
+  @override
+  String get importStep4 => '4. アプリに戻り「更新」をタップして新しいゲームを検出';
+
+  @override
+  String get gamesDirectory => 'ゲームディレクトリ：Games/';
+
+  @override
+  String get gotIt => '了解';
+
+  @override
+  String get removeGame => 'ゲームを削除';
+
+  @override
+  String removeGameConfirm(String title) {
+    return 'リストから「$title」を削除しますか？\nゲームファイルは削除されません。';
+  }
+
+  @override
+  String get cancel => 'キャンセル';
+
+  @override
+  String get remove => '削除';
+
+  @override
+  String get renameGame => 'ゲーム名を変更';
+
+  @override
+  String get displayTitle => '表示名';
+
+  @override
+  String get save => '保存';
+
+  @override
+  String gameAlreadyExists(String title) {
+    return 'ゲームは既に存在します：$title';
+  }
+
+  @override
+  String get builtInReady => '内蔵 ✓';
+
+  @override
+  String get builtInNotReady => '内蔵 ✗';
+
+  @override
+  String get customNotSet => 'カスタム（未設定）';
+
+  @override
+  String get engineNotFoundBuiltIn =>
+      '内蔵エンジンが見つかりません。ビルドスクリプトでエンジンをバンドルするか、設定でカスタムモードに切り替えてください。';
+
+  @override
+  String get engineNotFoundCustom => 'エンジンdylibが設定されていません。先に設定で構成してください。';
+
+  @override
+  String lastPlayed(String time) {
+    return '最終プレイ：$time';
+  }
+
+  @override
+  String get rename => '名前変更';
+
+  @override
+  String get settingsEngine => 'エンジン';
+
+  @override
+  String get engineMode => 'エンジンモード';
+
+  @override
+  String get builtIn => '内蔵';
+
+  @override
+  String get custom => 'カスタム';
+
+  @override
+  String get builtInEngineAvailable => '内蔵エンジン利用可能';
+
+  @override
+  String get builtInEngineNotFound => '内蔵エンジンが見つかりません';
+
+  @override
+  String get builtInEngineHint => 'ビルドスクリプトを使用してエンジンをコンパイルし、アプリにバンドルしてください。';
+
+  @override
+  String get engineDylibPath => 'エンジンdylibパス';
+
+  @override
+  String get notSetRequired => '未設定（必須）';
+
+  @override
+  String get clearPath => 'パスをクリア';
+
+  @override
+  String get browse => '参照...';
+
+  @override
+  String get selectEngineDylib => 'エンジンdylibを選択';
+
+  @override
+  String get settingsRendering => 'レンダリング';
+
+  @override
+  String get renderPipeline => 'レンダリングパイプライン';
+
+  @override
+  String get renderPipelineHint => 'ゲームの再起動後に有効になります';
+
+  @override
+  String get opengl => 'OpenGL';
+
+  @override
+  String get software => 'ソフトウェア';
+
+  @override
+  String get performanceOverlay => 'パフォーマンスオーバーレイ';
+
+  @override
+  String get performanceOverlayDesc => 'FPSとグラフィックAPI情報を表示';
+
+  @override
+  String get targetFrameRate => '目標フレームレート';
+
+  @override
+  String get targetFrameRateDesc => 'エンジンのTick速度を制限';
+
+  @override
+  String fpsLabel(int fps) {
+    return '$fps FPS';
+  }
+
+  @override
+  String get settingsGeneral => '一般';
+
+  @override
+  String get language => '言語';
+
+  @override
+  String get languageSystem => 'システムに従う';
+
+  @override
+  String get languageEn => 'English';
+
+  @override
+  String get languageZh => '简体中文';
+
+  @override
+  String get languageJa => '日本語';
+
+  @override
+  String get settingsAbout => 'バージョン情報';
+
+  @override
+  String get version => 'バージョン';
+
+  @override
+  String get gameEngineError => 'エンジンエラー';
+
+  @override
+  String get unknownError => '不明なエラー';
+
+  @override
+  String get back => '戻る';
+
+  @override
+  String get retry => '再試行';
+
+  @override
+  String get hideDebug => 'デバッグを非表示';
+
+  @override
+  String get showDebug => 'デバッグを表示';
+
+  @override
+  String get pause => '一時停止';
+
+  @override
+  String get resume => '再開';
+
+  @override
+  String get exitGame => 'ゲームを終了';
+
+  @override
+  String get selectGameDirectory => 'ゲームディレクトリを選択';
+
+  @override
+  String get justNow => 'たった今';
+
+  @override
+  String minutesAgo(int count) {
+    return '$count分前';
+  }
+
+  @override
+  String hoursAgo(int count) {
+    return '$count時間前';
+  }
+
+  @override
+  String daysAgo(int count) {
+    return '$count日前';
+  }
+}

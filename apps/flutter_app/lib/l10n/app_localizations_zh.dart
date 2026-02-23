@@ -1,0 +1,250 @@
+// ignore: unused_import
+import 'package:intl/intl.dart' as intl;
+import 'app_localizations.dart';
+
+// ignore_for_file: type=lint
+
+/// The translations for Chinese (`zh`).
+class AppLocalizationsZh extends AppLocalizations {
+  AppLocalizationsZh([String locale = 'zh']) : super(locale);
+
+  @override
+  String get appTitle => 'KrKr2 启动器';
+
+  @override
+  String get settings => '设置';
+
+  @override
+  String get addGame => '添加游戏';
+
+  @override
+  String get refresh => '刷新';
+
+  @override
+  String get howToImport => '导入指南';
+
+  @override
+  String get noGamesYet => '尚未添加任何游戏';
+
+  @override
+  String get noGamesHintDesktop => '点击「添加游戏」选择游戏目录';
+
+  @override
+  String get noGamesHintIos =>
+      '使用「文件」App 将游戏文件夹复制到：\n我的 iPhone > Krkr2 > Games\n然后点击「刷新」';
+
+  @override
+  String get importGames => '导入游戏';
+
+  @override
+  String get importGamesDesc => '请使用「文件」App 将游戏文件夹复制到本应用的目录：';
+
+  @override
+  String get importStep1 => '1. 打开 iPhone 上的「文件」App';
+
+  @override
+  String get importStep2 => '2. 前往：我的 iPhone > Krkr2 > Games';
+
+  @override
+  String get importStep3 => '3. 将游戏文件夹复制到 Games 目录';
+
+  @override
+  String get importStep4 => '4. 返回本应用，点击「刷新」检测新游戏';
+
+  @override
+  String get gamesDirectory => '游戏目录：Games/';
+
+  @override
+  String get gotIt => '知道了';
+
+  @override
+  String get removeGame => '移除游戏';
+
+  @override
+  String removeGameConfirm(String title) {
+    return '从列表中移除「$title」？\n这不会删除游戏文件。';
+  }
+
+  @override
+  String get cancel => '取消';
+
+  @override
+  String get remove => '移除';
+
+  @override
+  String get renameGame => '重命名游戏';
+
+  @override
+  String get displayTitle => '显示名称';
+
+  @override
+  String get save => '保存';
+
+  @override
+  String gameAlreadyExists(String title) {
+    return '游戏已存在：$title';
+  }
+
+  @override
+  String get builtInReady => '内置 ✓';
+
+  @override
+  String get builtInNotReady => '内置 ✗';
+
+  @override
+  String get customNotSet => '自定义（未设置）';
+
+  @override
+  String get engineNotFoundBuiltIn => '未找到内置引擎。请使用构建脚本将引擎打包到应用中，或在设置中切换到自定义模式。';
+
+  @override
+  String get engineNotFoundCustom => '引擎 dylib 未设置。请先在设置中进行配置。';
+
+  @override
+  String lastPlayed(String time) {
+    return '上次游玩：$time';
+  }
+
+  @override
+  String get rename => '重命名';
+
+  @override
+  String get settingsEngine => '引擎';
+
+  @override
+  String get engineMode => '引擎模式';
+
+  @override
+  String get builtIn => '内置';
+
+  @override
+  String get custom => '自定义';
+
+  @override
+  String get builtInEngineAvailable => '内置引擎可用';
+
+  @override
+  String get builtInEngineNotFound => '未找到内置引擎';
+
+  @override
+  String get builtInEngineHint => '请使用构建脚本编译并将引擎打包到应用中。';
+
+  @override
+  String get engineDylibPath => '引擎 dylib 路径';
+
+  @override
+  String get notSetRequired => '未设置（必填）';
+
+  @override
+  String get clearPath => '清除路径';
+
+  @override
+  String get browse => '浏览...';
+
+  @override
+  String get selectEngineDylib => '选择引擎 dylib';
+
+  @override
+  String get settingsRendering => '渲染';
+
+  @override
+  String get renderPipeline => '渲染管线';
+
+  @override
+  String get renderPipelineHint => '需要重启游戏后生效';
+
+  @override
+  String get opengl => 'OpenGL';
+
+  @override
+  String get software => '软件渲染';
+
+  @override
+  String get performanceOverlay => '性能监控';
+
+  @override
+  String get performanceOverlayDesc => '显示帧率和图形 API 信息';
+
+  @override
+  String get targetFrameRate => '目标帧率';
+
+  @override
+  String get targetFrameRateDesc => '限制引擎 Tick 速率';
+
+  @override
+  String fpsLabel(int fps) {
+    return '$fps FPS';
+  }
+
+  @override
+  String get settingsGeneral => '通用';
+
+  @override
+  String get language => '语言';
+
+  @override
+  String get languageSystem => '跟随系统';
+
+  @override
+  String get languageEn => 'English';
+
+  @override
+  String get languageZh => '简体中文';
+
+  @override
+  String get languageJa => '日本語';
+
+  @override
+  String get settingsAbout => '关于';
+
+  @override
+  String get version => '版本';
+
+  @override
+  String get gameEngineError => '引擎错误';
+
+  @override
+  String get unknownError => '未知错误';
+
+  @override
+  String get back => '返回';
+
+  @override
+  String get retry => '重试';
+
+  @override
+  String get hideDebug => '隐藏调试';
+
+  @override
+  String get showDebug => '显示调试';
+
+  @override
+  String get pause => '暂停';
+
+  @override
+  String get resume => '继续';
+
+  @override
+  String get exitGame => '退出游戏';
+
+  @override
+  String get selectGameDirectory => '选择游戏目录';
+
+  @override
+  String get justNow => '刚刚';
+
+  @override
+  String minutesAgo(int count) {
+    return '$count 分钟前';
+  }
+
+  @override
+  String hoursAgo(int count) {
+    return '$count 小时前';
+  }
+
+  @override
+  String daysAgo(int count) {
+    return '$count 天前';
+  }
+}

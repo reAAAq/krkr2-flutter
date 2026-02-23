@@ -1,0 +1,92 @@
+{
+  "@@locale": "ja",
+
+  "appTitle": "KrKr2 ランチャー",
+  "settings": "設定",
+  "addGame": "ゲームを追加",
+  "refresh": "更新",
+  "howToImport": "インポート方法",
+  "noGamesYet": "ゲームがまだ追加されていません",
+  "noGamesHintDesktop": "「ゲームを追加」をクリックしてゲームディレクトリを選択してください",
+  "noGamesHintIos": "「ファイル」アプリでゲームフォルダをコピーしてください：\niPhone内 > Krkr2 > Games\nその後「更新」をタップ",
+
+  "importGames": "ゲームをインポート",
+  "importGamesDesc": "「ファイル」アプリを使用して、ゲームフォルダをこのアプリのディレクトリにコピーしてください：",
+  "importStep1": "1. iPhoneの「ファイル」アプリを開く",
+  "importStep2": "2. iPhone内 > Krkr2 > Games に移動",
+  "importStep3": "3. ゲームフォルダをGamesディレクトリにコピー",
+  "importStep4": "4. アプリに戻り「更新」をタップして新しいゲームを検出",
+  "gamesDirectory": "ゲームディレクトリ：Games/",
+  "gotIt": "了解",
+
+  "removeGame": "ゲームを削除",
+  "removeGameConfirm": "リストから「{title}」を削除しますか？\nゲームファイルは削除されません。",
+  "cancel": "キャンセル",
+  "remove": "削除",
+
+  "renameGame": "ゲーム名を変更",
+  "displayTitle": "表示名",
+  "save": "保存",
+
+  "gameAlreadyExists": "ゲームは既に存在します：{title}",
+
+  "builtInReady": "内蔵 ✓",
+  "builtInNotReady": "内蔵 ✗",
+  "customNotSet": "カスタム（未設定）",
+
+  "engineNotFoundBuiltIn": "内蔵エンジンが見つかりません。ビルドスクリプトでエンジンをバンドルするか、設定でカスタムモードに切り替えてください。",
+  "engineNotFoundCustom": "エンジンdylibが設定されていません。先に設定で構成してください。",
+
+  "lastPlayed": "最終プレイ：{time}",
+  "rename": "名前変更",
+
+  "settingsEngine": "エンジン",
+  "engineMode": "エンジンモード",
+  "builtIn": "内蔵",
+  "custom": "カスタム",
+  "builtInEngineAvailable": "内蔵エンジン利用可能",
+  "builtInEngineNotFound": "内蔵エンジンが見つかりません",
+  "builtInEngineHint": "ビルドスクリプトを使用してエンジンをコンパイルし、アプリにバンドルしてください。",
+  "engineDylibPath": "エンジンdylibパス",
+  "notSetRequired": "未設定（必須）",
+  "clearPath": "パスをクリア",
+  "browse": "参照...",
+  "selectEngineDylib": "エンジンdylibを選択",
+
+  "settingsRendering": "レンダリング",
+  "renderPipeline": "レンダリングパイプライン",
+  "renderPipelineHint": "ゲームの再起動後に有効になります",
+  "opengl": "OpenGL",
+  "software": "ソフトウェア",
+  "performanceOverlay": "パフォーマンスオーバーレイ",
+  "performanceOverlayDesc": "FPSとグラフィックAPI情報を表示",
+  "targetFrameRate": "目標フレームレート",
+  "targetFrameRateDesc": "エンジンのTick速度を制限",
+  "fpsLabel": "{fps} FPS",
+
+  "settingsGeneral": "一般",
+  "language": "言語",
+  "languageSystem": "システムに従う",
+  "languageEn": "English",
+  "languageZh": "简体中文",
+  "languageJa": "日本語",
+
+  "settingsAbout": "バージョン情報",
+  "version": "バージョン",
+
+  "gameEngineError": "エンジンエラー",
+  "unknownError": "不明なエラー",
+  "back": "戻る",
+  "retry": "再試行",
+  "hideDebug": "デバッグを非表示",
+  "showDebug": "デバッグを表示",
+  "pause": "一時停止",
+  "resume": "再開",
+  "exitGame": "ゲームを終了",
+  "selectGameDirectory": "ゲームディレクトリを選択",
+
+  "justNow": "たった今",
+  "minutesAgo": "{count}分前",
+  "hoursAgo": "{count}時間前",
+  "daysAgo": "{count}日前"
+}

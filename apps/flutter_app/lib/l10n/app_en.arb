@@ -1,0 +1,127 @@
+{
+  "@@locale": "en",
+
+  "appTitle": "KrKr2 Launcher",
+  "settings": "Settings",
+  "addGame": "Add Game",
+  "refresh": "Refresh",
+  "howToImport": "How to Import",
+  "noGamesYet": "No games added yet",
+  "noGamesHintDesktop": "Click \"Add Game\" to select a game directory",
+  "noGamesHintIos": "Use the Files app to copy game folders to:\nOn My iPhone > Krkr2 > Games\nThen tap \"Refresh\"",
+
+  "importGames": "Import Games",
+  "importGamesDesc": "Please copy your game folders to this app's directory using the Files app:",
+  "importStep1": "1. Open the \"Files\" app on your iPhone",
+  "importStep2": "2. Go to: On My iPhone > Krkr2 > Games",
+  "importStep3": "3. Copy your game folder into the Games directory",
+  "importStep4": "4. Come back and tap \"Refresh\" to detect new games",
+  "gamesDirectory": "Games directory: Games/",
+  "gotIt": "Got it",
+
+  "removeGame": "Remove Game",
+  "removeGameConfirm": "Remove \"{title}\" from the list?\nThis will NOT delete the game files.",
+  "@removeGameConfirm": {
+    "placeholders": {
+      "title": { "type": "String" }
+    }
+  },
+  "cancel": "Cancel",
+  "remove": "Remove",
+
+  "renameGame": "Rename Game",
+  "displayTitle": "Display Title",
+  "save": "Save",
+
+  "gameAlreadyExists": "Game already exists: {title}",
+  "@gameAlreadyExists": {
+    "placeholders": {
+      "title": { "type": "String" }
+    }
+  },
+
+  "builtInReady": "Built-in ✓",
+  "builtInNotReady": "Built-in ✗",
+  "customNotSet": "Custom (not set)",
+
+  "engineNotFoundBuiltIn": "Built-in engine not found. Please use the build script to bundle the engine, or switch to Custom mode in Settings.",
+  "engineNotFoundCustom": "Engine dylib not set. Please configure it in Settings first.",
+
+  "lastPlayed": "Last played: {time}",
+  "@lastPlayed": {
+    "placeholders": {
+      "time": { "type": "String" }
+    }
+  },
+  "rename": "Rename",
+
+  "settingsEngine": "Engine",
+  "engineMode": "Engine Mode",
+  "builtIn": "Built-in",
+  "custom": "Custom",
+  "builtInEngineAvailable": "Built-in engine available",
+  "builtInEngineNotFound": "Built-in engine not found",
+  "builtInEngineHint": "Use the build script to compile and bundle the engine into the app.",
+  "engineDylibPath": "Engine dylib path",
+  "notSetRequired": "Not set (required)",
+  "clearPath": "Clear path",
+  "browse": "Browse...",
+  "selectEngineDylib": "Select Engine dylib",
+
+  "settingsRendering": "Rendering",
+  "renderPipeline": "Render Pipeline",
+  "renderPipelineHint": "Requires restarting the game to take effect",
+  "opengl": "OpenGL",
+  "software": "Software",
+  "performanceOverlay": "Performance Overlay",
+  "performanceOverlayDesc": "Show FPS and graphics API info",
+  "targetFrameRate": "Target Frame Rate",
+  "targetFrameRateDesc": "Limits engine tick rate",
+  "fpsLabel": "{fps} FPS",
+  "@fpsLabel": {
+    "placeholders": {
+      "fps": { "type": "int" }
+    }
+  },
+
+  "settingsGeneral": "General",
+  "language": "Language",
+  "languageSystem": "System Default",
+  "languageEn": "English",
+  "languageZh": "简体中文",
+  "languageJa": "日本語",
+
+  "settingsAbout": "About",
+  "version": "Version",
+
+  "gameEngineError": "Engine Error",
+  "unknownError": "Unknown error",
+  "back": "Back",
+  "retry": "Retry",
+  "hideDebug": "Hide Debug",
+  "showDebug": "Show Debug",
+  "pause": "Pause",
+  "resume": "Resume",
+  "exitGame": "Exit Game",
+  "selectGameDirectory": "Select Game Directory",
+
+  "justNow": "just now",
+  "minutesAgo": "{count} min ago",
+  "@minutesAgo": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "hoursAgo": "{count} hours ago",
+  "@hoursAgo": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "daysAgo": "{count} days ago",
+  "@daysAgo": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  }
+}

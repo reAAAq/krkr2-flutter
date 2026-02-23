@@ -1,0 +1,257 @@
+// ignore: unused_import
+import 'package:intl/intl.dart' as intl;
+import 'app_localizations.dart';
+
+// ignore_for_file: type=lint
+
+/// The translations for English (`en`).
+class AppLocalizationsEn extends AppLocalizations {
+  AppLocalizationsEn([String locale = 'en']) : super(locale);
+
+  @override
+  String get appTitle => 'KrKr2 Launcher';
+
+  @override
+  String get settings => 'Settings';
+
+  @override
+  String get addGame => 'Add Game';
+
+  @override
+  String get refresh => 'Refresh';
+
+  @override
+  String get howToImport => 'How to Import';
+
+  @override
+  String get noGamesYet => 'No games added yet';
+
+  @override
+  String get noGamesHintDesktop =>
+      'Click \"Add Game\" to select a game directory';
+
+  @override
+  String get noGamesHintIos =>
+      'Use the Files app to copy game folders to:\nOn My iPhone > Krkr2 > Games\nThen tap \"Refresh\"';
+
+  @override
+  String get importGames => 'Import Games';
+
+  @override
+  String get importGamesDesc =>
+      'Please copy your game folders to this app\'s directory using the Files app:';
+
+  @override
+  String get importStep1 => '1. Open the \"Files\" app on your iPhone';
+
+  @override
+  String get importStep2 => '2. Go to: On My iPhone > Krkr2 > Games';
+
+  @override
+  String get importStep3 => '3. Copy your game folder into the Games directory';
+
+  @override
+  String get importStep4 =>
+      '4. Come back and tap \"Refresh\" to detect new games';
+
+  @override
+  String get gamesDirectory => 'Games directory: Games/';
+
+  @override
+  String get gotIt => 'Got it';
+
+  @override
+  String get removeGame => 'Remove Game';
+
+  @override
+  String removeGameConfirm(String title) {
+    return 'Remove \"$title\" from the list?\nThis will NOT delete the game files.';
+  }
+
+  @override
+  String get cancel => 'Cancel';
+
+  @override
+  String get remove => 'Remove';
+
+  @override
+  String get renameGame => 'Rename Game';
+
+  @override
+  String get displayTitle => 'Display Title';
+
+  @override
+  String get save => 'Save';
+
+  @override
+  String gameAlreadyExists(String title) {
+    return 'Game already exists: $title';
+  }
+
+  @override
+  String get builtInReady => 'Built-in ✓';
+
+  @override
+  String get builtInNotReady => 'Built-in ✗';
+
+  @override
+  String get customNotSet => 'Custom (not set)';
+
+  @override
+  String get engineNotFoundBuiltIn =>
+      'Built-in engine not found. Please use the build script to bundle the engine, or switch to Custom mode in Settings.';
+
+  @override
+  String get engineNotFoundCustom =>
+      'Engine dylib not set. Please configure it in Settings first.';
+
+  @override
+  String lastPlayed(String time) {
+    return 'Last played: $time';
+  }
+
+  @override
+  String get rename => 'Rename';
+
+  @override
+  String get settingsEngine => 'Engine';
+
+  @override
+  String get engineMode => 'Engine Mode';
+
+  @override
+  String get builtIn => 'Built-in';
+
+  @override
+  String get custom => 'Custom';
+
+  @override
+  String get builtInEngineAvailable => 'Built-in engine available';
+
+  @override
+  String get builtInEngineNotFound => 'Built-in engine not found';
+
+  @override
+  String get builtInEngineHint =>
+      'Use the build script to compile and bundle the engine into the app.';
+
+  @override
+  String get engineDylibPath => 'Engine dylib path';
+
+  @override
+  String get notSetRequired => 'Not set (required)';
+
+  @override
+  String get clearPath => 'Clear path';
+
+  @override
+  String get browse => 'Browse...';
+
+  @override
+  String get selectEngineDylib => 'Select Engine dylib';
+
+  @override
+  String get settingsRendering => 'Rendering';
+
+  @override
+  String get renderPipeline => 'Render Pipeline';
+
+  @override
+  String get renderPipelineHint =>
+      'Requires restarting the game to take effect';
+
+  @override
+  String get opengl => 'OpenGL';
+
+  @override
+  String get software => 'Software';
+
+  @override
+  String get performanceOverlay => 'Performance Overlay';
+
+  @override
+  String get performanceOverlayDesc => 'Show FPS and graphics API info';
+
+  @override
+  String get targetFrameRate => 'Target Frame Rate';
+
+  @override
+  String get targetFrameRateDesc => 'Limits engine tick rate';
+
+  @override
+  String fpsLabel(int fps) {
+    return '$fps FPS';
+  }
+
+  @override
+  String get settingsGeneral => 'General';
+
+  @override
+  String get language => 'Language';
+
+  @override
+  String get languageSystem => 'System Default';
+
+  @override
+  String get languageEn => 'English';
+
+  @override
+  String get languageZh => '简体中文';
+
+  @override
+  String get languageJa => '日本語';
+
+  @override
+  String get settingsAbout => 'About';
+
+  @override
+  String get version => 'Version';
+
+  @override
+  String get gameEngineError => 'Engine Error';
+
+  @override
+  String get unknownError => 'Unknown error';
+
+  @override
+  String get back => 'Back';
+
+  @override
+  String get retry => 'Retry';
+
+  @override
+  String get hideDebug => 'Hide Debug';
+
+  @override
+  String get showDebug => 'Show Debug';
+
+  @override
+  String get pause => 'Pause';
+
+  @override
+  String get resume => 'Resume';
+
+  @override
+  String get exitGame => 'Exit Game';
+
+  @override
+  String get selectGameDirectory => 'Select Game Directory';
+
+  @override
+  String get justNow => 'just now';
+
+  @override
+  String minutesAgo(int count) {
+    return '$count min ago';
+  }
+
+  @override
+  String hoursAgo(int count) {
+    return '$count hours ago';
+  }
+
+  @override
+  String daysAgo(int count) {
+    return '$count days ago';
+  }
+}
