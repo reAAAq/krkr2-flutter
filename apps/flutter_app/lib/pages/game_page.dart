@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -29,6 +31,8 @@ class GamePage extends StatefulWidget {
 class _GamePageState extends State<GamePage>
     with WidgetsBindingObserver {
   static const int _engineResultOk = 0;
+  static const MethodChannel _platformChannel =
+      MethodChannel('flutter_engine_bridge');
 
   late EngineBridge _bridge;
   final GlobalKey<EngineSurfaceState> _surfaceKey =
@@ -127,7 +131,113 @@ class _GamePageState extends State<GamePage>
 
   // --- Auto-start flow: create → open → tick ---
 
+  String _normalizeGamePath(String raw) {
+    var p = raw.trim();
+    if (p.startsWith('file://')) {
+      p = Uri.parse(p).toFilePath();
+    }
+    // Engine accepts POSIX absolute paths on Android host mode.
+    if (p.startsWith('./')) {
+      p = '/${p.substring(2)}';
+    }
+    return p;
+  }
+
+  /// On Android, detect whether the user selected the game's `data/`
+  /// sub-directory instead of the game root.
+  ///
+  /// The kirikiri2 engine expects the project directory to contain
+  /// `startup.tjs` (or `data/system/Initialize.tjs`).  When the user
+  /// picks a folder whose last component is `data` and it does NOT
+  /// contain `startup.tjs` but DOES contain `system/Initialize.tjs`,
+  /// we step up one level to the real game root — but ONLY if the
+  /// parent directory has `startup.tjs` or `data/` pointing back here.
+  Future<String> _adjustGamePathForAndroid(String path) async {
+    if (!Platform.isAndroid) return path;
+
+    final clean = path.endsWith('/') ? path.substring(0, path.length - 1) : path;
+
+    // If the current directory already has startup.tjs, it IS the game
+    // root (or at least a valid project dir). Do NOT adjust.
+    for (final name in ['startup.tjs', 'Startup.tjs', 'STARTUP.TJS']) {
+      if (await File('$clean/$name').exists()) {
+        _log('Game path has $name — no adjustment needed');
+        return path;
+      }
+    }
+
+    // If <path>/data/system/Initialize.tjs exists, this is already a
+    // proper game root that uses the data/ sub-directory layout.
+    for (final name in ['initialize.tjs', 'Initialize.tjs']) {
+      if (await File('$clean/data/system/$name').exists()) {
+        _log('Game path has data/system/$name — no adjustment needed');
+        return path;
+      }
+    }
+
+    // The directory has neither startup.tjs nor data/system/Initialize.tjs.
+    // Check if it looks like the user selected the `data/` folder itself:
+    //   - last path component is "data"
+    //   - contains system/Initialize.tjs directly
+    final dirName = clean.substring(clean.lastIndexOf('/') + 1).toLowerCase();
+    if (dirName != 'data') {
+      // Not a `data/` directory — nothing to adjust.
+      return path;
+    }
+
+    // Verify system/Initialize.tjs exists in the selected directory.
+    bool hasSystemInit = false;
+    for (final name in ['initialize.tjs', 'Initialize.tjs']) {
+      if (await File('$clean/system/$name').exists()) {
+        hasSystemInit = true;
+        break;
+      }
+    }
+
+    if (!hasSystemInit) {
+      // Doesn't look like a krkr2 data/ directory either.
+      return path;
+    }
+
+    // Step up to the parent directory.
+    final adjusted = clean.substring(0, clean.lastIndexOf('/'));
+    _log('Auto-adjusted game path: $path → $adjusted (selected data/ folder)');
+    return adjusted;
+  }
+
+  Future<String?> _preflightGamePath(String path) async {
+    try {
+      final dir = Directory(path);
+      if (!await dir.exists()) {
+        return 'Game path does not exist: $path';
+      }
+
+      // Accept either startup.tjs in root or data/system/initialize.tjs
+      final startup = File('$path/startup.tjs');
+      final init = File('$path/data/system/initialize.tjs');
+      final initUpper = File('$path/data/system/Initialize.tjs');
+      if (!await startup.exists() &&
+          !await init.exists() &&
+          !await initUpper.exists()) {
+        return 'Missing startup script in: $path\n'
+            '(looked for startup.tjs and data/system/initialize.tjs)';
+      }
+    } catch (e) {
+      return 'Game path check failed: $e';
+    }
+    return null;
+  }
+
   Future<void> _autoStart() async {
+    if (Platform.isAndroid) {
+      final granted = await _ensureAndroidAllFilesAccess();
+      if (!granted) {
+        _fail('All files access is required on Android. '
+            'Please grant permission and open the game again.');
+        return;
+      }
+    }
+
     setState(() => _phase = _EnginePhase.creating);
     _log('engine_create...');
 
@@ -151,14 +261,24 @@ class _GamePageState extends State<GamePage>
 
     if (!mounted) return;
     setState(() => _phase = _EnginePhase.opening);
-    _log('engine_open_game(${widget.gamePath})...');
+    var normalizedGamePath = _normalizeGamePath(widget.gamePath);
+    // On Android, auto-detect if the user selected the data/ folder
+    // itself and step up to the real game root.
+    normalizedGamePath = await _adjustGamePathForAndroid(normalizedGamePath);
+    _log('engine_open_game($normalizedGamePath)...');
     _log('Starting application — this may take a moment...');
+
+    final preflightError = await _preflightGamePath(normalizedGamePath);
+    if (preflightError != null) {
+      _fail(preflightError);
+      return;
+    }
 
     // Yield again so the "Opening game..." log line is painted before
     // the heavy engine_open_game call blocks the thread.
     await Future<void>.delayed(Duration.zero);
 
-    final int openResult = await _bridge.engineOpenGame(widget.gamePath);
+    final int openResult = await _bridge.engineOpenGame(normalizedGamePath);
     if (openResult != _engineResultOk) {
       _fail('engine_open_game failed: result=$openResult, '
           'error=${_bridge.engineGetLastError()}');
@@ -173,6 +293,26 @@ class _GamePageState extends State<GamePage>
     setState(() => _phase = _EnginePhase.running);
     _fetchRendererInfo();
     _startTickLoop();
+  }
+
+  Future<bool> _ensureAndroidAllFilesAccess() async {
+    try {
+      final has = await _platformChannel.invokeMethod<bool>(
+            'hasManageExternalStorage',
+          ) ??
+          false;
+      if (has) return true;
+      _log('Requesting Android all-files access permission...');
+      await _platformChannel.invokeMethod<bool>('requestManageExternalStorage');
+      final hasAfter = await _platformChannel.invokeMethod<bool>(
+            'hasManageExternalStorage',
+          ) ??
+          false;
+      return hasAfter;
+    } catch (e) {
+      _log('All-files access check failed: $e');
+      return false;
+    }
   }
 
   void _fail(String message) {
