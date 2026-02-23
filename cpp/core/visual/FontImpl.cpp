@@ -220,6 +220,7 @@ void TVPInitFontNames() {
 
         if(TVPEnumFontsProc(Android_GetInternalStoragePath() + "/default.ttf"))
             break;
+
 #elif defined(WIN32)
         if(TVPEnumFontsProc(TJS_W("file://./c/Windows/Fonts/msyh.ttf")))
             break;
@@ -274,6 +275,18 @@ void TVPInitFontNames() {
                         return ret;
                     }) > 0;
             };
+
+#if defined(__ANDROID__)
+            if(tryLoadFontDirect("/system/fonts/NotoSansCJK-Regular.ttc",
+                                 "/system/fonts/NotoSansCJK-Regular.ttc"))
+                break;
+            if(tryLoadFontDirect("/system/fonts/NotoSansSC-Regular.otf",
+                                 "/system/fonts/NotoSansSC-Regular.otf"))
+                break;
+            if(tryLoadFontDirect("/system/fonts/DroidSansFallback.ttf",
+                                 "/system/fonts/DroidSansFallback.ttf"))
+                break;
+#endif
 
 #if defined(__APPLE__) && TARGET_OS_IOS
             // iOS: use CoreText API to get system font data (sandbox-safe).

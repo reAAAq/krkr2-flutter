@@ -53,6 +53,9 @@
 #include "Platform.h"
 #include "Exception.h"
 #include "ConfigManager/LocaleConfigManager.h"
+#if defined(__ANDROID__)
+#include <android/log.h>
+#endif
 
 //---------------------------------------------------------------------------
 // Script system initialization script
@@ -949,6 +952,11 @@ void TVPExecuteStartupScript() {
 
         ttstr place(TVPSearchPlacedPath(TVPStartupScriptName));
         spdlog::info("Loading startup script: {}", place.AsStdString());
+#if defined(__ANDROID__)
+        __android_log_print(ANDROID_LOG_INFO, "krkr2",
+                            "Loading startup script: %s",
+                            place.AsStdString().c_str());
+#endif
         TVPStartupSuccess = false;
         try {
             iTJSTextReadStream *stream = TVPCreateTextStreamForRead(place, "");
@@ -963,10 +971,18 @@ void TVPExecuteStartupScript() {
         if(!TVPStartupSuccess) {
             // try direct execute initialize.tjs to compatible for
             // some patch
+#if defined(__ANDROID__)
+            __android_log_print(ANDROID_LOG_INFO, "krkr2",
+                                "Fallback startup script: system/Initialize.tjs");
+#endif
             TVPExecuteStorage(TJS_W("system/Initialize.tjs"));
             TVPStartupSuccess = true;
         }
         spdlog::info("Startup script ended.");
+#if defined(__ANDROID__)
+        __android_log_print(ANDROID_LOG_INFO, "krkr2",
+                            "Startup script ended successfully");
+#endif
         try {
             ttstr patch = TVPGetAppPath() + "AfterStartup.tjs";
             if(TVPIsExistentStorageNoSearch(patch))
