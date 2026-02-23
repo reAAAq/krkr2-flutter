@@ -238,6 +238,9 @@ public:
         if (egl.HasIOSurface()) {
             fbW = egl.GetIOSurfaceWidth();
             fbH = egl.GetIOSurfaceHeight();
+        } else if (egl.HasNativeWindow()) {
+            fbW = egl.GetNativeWindowWidth();
+            fbH = egl.GetNativeWindowHeight();
         } else {
             fbW = egl.GetWidth();
             fbH = egl.GetHeight();
@@ -293,9 +296,12 @@ public:
         glUniform1i(blit_tex_uniform_, 0);
         // In IOSurface mode, the surface has a top-down coordinate system
         // while OpenGL renders bottom-up, so we need to flip Y.
+        // Android SurfaceTexture (WindowSurface) does NOT need flipping
+        // because eglSwapBuffers → SurfaceTexture → Flutter Texture widget
+        // handles the coordinate transform automatically.
         // When using a native OGL texture from the engine (GPU path), the
         // texture is already in OGL convention (bottom-up), so we may need
-        // to flip when rendering to IOSurface but not to Pbuffer.
+        // to flip when rendering to IOSurface but not to Pbuffer/WindowSurface.
         glUniform1f(blit_flipy_uniform_, egl.HasIOSurface() ? 1.0f : 0.0f);
 
         // Compute UV scale to handle power-of-two textures.
@@ -331,12 +337,12 @@ public:
         glUseProgram(0);
         glBindTexture(GL_TEXTURE_2D, 0);
 
-        // In IOSurface mode, glFlush() is sufficient — the IOSurface
-        // has its own GPU-GPU synchronization mechanism, so we don't
-        // need to stall the CPU waiting for GPU completion.
+        // In IOSurface/WindowSurface mode, glFlush() is sufficient —
+        // IOSurface has GPU-GPU sync, and WindowSurface (SurfaceTexture)
+        // is synchronized by eglSwapBuffers in TVPForceSwapBuffer.
         // In Pbuffer mode, glFinish() is required because the legacy
         // path uses glReadPixels which needs GPU to be done.
-        if (egl.HasIOSurface()) {
+        if (egl.HasIOSurface() || egl.HasNativeWindow()) {
             glFlush();
         } else {
             glFinish();
