@@ -347,6 +347,13 @@ public:
         } else {
             glFinish();
         }
+
+        // Mark the frame as dirty so TVPForceSwapBuffer() knows there is
+        // new content to present.  Without this, eglSwapBuffers would be
+        // called every tick even when no rendering happened, causing
+        // double-buffer flicker (alternating between current and stale
+        // back-buffer contents).
+        egl.MarkFrameDirty();
     }
 
     void InvalidateClose() override {
