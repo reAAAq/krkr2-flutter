@@ -13,6 +13,7 @@
 
 #include "tjsNative.h"
 #include "ThreadIntf.h"
+#include <atomic>
 #include <condition_variable>
 #include <thread>
 
@@ -26,6 +27,7 @@ class tTVPThread {
     std::mutex _mutex; // for suspend
     std::condition_variable _cond;
     bool Suspended;
+    std::atomic<bool> Finished{false}; // set when thread function returns
 
     static void * /*__stdcall*/ StartProc(void *arg);
 

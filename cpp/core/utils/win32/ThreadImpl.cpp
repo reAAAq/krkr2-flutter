@@ -40,7 +40,10 @@ tTVPThread::tTVPThread(bool suspended) {
 
     try {
         Handle = std::thread([this] { StartProc(this); });
-        Handle.detach();
+        // Do NOT detach: we need Handle.joinable() == true so that
+        // WaitFor() (join) works correctly. Detaching was a legacy
+        // pattern that made it impossible to synchronize on thread
+        // exit, leading to use-after-free on member mutexes.
     } catch(const std::system_error &) {
         // 捕获线程创建失败异常
         TVPThrowInternalError;
@@ -49,7 +52,14 @@ tTVPThread::tTVPThread(bool suspended) {
 
 //---------------------------------------------------------------------------
 tTVPThread::~tTVPThread() {
-    // CloseHandle(Handle);
+    // Ensure the std::thread is not joinable when destroyed.
+    // Subclass destructors SHOULD call Terminate() + WaitFor() first.
+    // This is a safety net to avoid std::terminate().
+    if(Handle.joinable()) {
+        Terminated = true;
+        _cond.notify_one(); // wake up if suspended
+        Handle.join();
+    }
 }
 
 //---------------------------------------------------------------------------
@@ -60,6 +70,7 @@ void *tTVPThread::StartProc(void *arg) {
         _this->_cond.wait(lk);
     }
     _this->Execute();
+    _this->Finished.store(true, std::memory_order_release);
     TVPOnThreadExited();
     return nullptr;
 }
@@ -68,6 +79,11 @@ void *tTVPThread::StartProc(void *arg) {
 void tTVPThread::WaitFor() {
     if(Handle.joinable()) {
         Handle.join();
+    }
+    // If the thread was somehow detached before (shouldn't happen with
+    // the current code), spin-wait on the Finished flag as a safety net.
+    while(!Finished.load(std::memory_order_acquire)) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 }
 
