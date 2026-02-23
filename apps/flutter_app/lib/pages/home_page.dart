@@ -27,6 +27,7 @@ class _HomePageState extends State<HomePage> {
   static const String _dylibPathKey = 'krkr2_dylib_path';
   static const String _engineModeKey = 'krkr2_engine_mode';
   static const String _perfOverlayKey = 'krkr2_perf_overlay';
+  static const String _fpsLimitEnabledKey = 'krkr2_fps_limit_enabled';
   static const String _targetFpsKey = 'krkr2_target_fps';
   static const String _rendererKey = 'krkr2_renderer';
   static const List<int> _fpsOptions = [30, 60, 120];
@@ -40,6 +41,7 @@ class _HomePageState extends State<HomePage> {
   String? _builtInDylibPath;
   bool _builtInAvailable = false;
   bool _perfOverlay = false;
+  bool _fpsLimitEnabled = false;
   int _targetFps = _defaultFps;
   String _renderer = 'opengl';
 
@@ -79,6 +81,7 @@ class _HomePageState extends State<HomePage> {
     _builtInDylibPath = _resolveBuiltInDylibPath();
     _builtInAvailable = _builtInDylibPath != null;
     _perfOverlay = prefs.getBool(_perfOverlayKey) ?? false;
+    _fpsLimitEnabled = prefs.getBool(_fpsLimitEnabledKey) ?? false;
     _targetFps = prefs.getInt(_targetFpsKey) ?? _defaultFps;
     if (!_fpsOptions.contains(_targetFps)) _targetFps = _defaultFps;
     _renderer = prefs.getString(_rendererKey) ?? 'opengl';
@@ -388,6 +391,7 @@ class _HomePageState extends State<HomePage> {
           builtInDylibPath: _builtInDylibPath,
           builtInAvailable: _builtInAvailable,
           perfOverlay: _perfOverlay,
+          fpsLimitEnabled: _fpsLimitEnabled,
           targetFps: _targetFps,
           renderer: _renderer,
         ),
@@ -398,6 +402,7 @@ class _HomePageState extends State<HomePage> {
         _engineMode = result.engineMode;
         _customDylibPath = result.customDylibPath;
         _perfOverlay = result.perfOverlay;
+        _fpsLimitEnabled = result.fpsLimitEnabled;
         _targetFps = result.targetFps;
         _renderer = result.renderer;
       });

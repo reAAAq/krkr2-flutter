@@ -64,8 +64,11 @@
   "software": "软件渲染",
   "performanceOverlay": "性能监控",
   "performanceOverlayDesc": "显示帧率和图形 API 信息",
+  "fpsLimitEnabled": "帧率限制",
+  "fpsLimitEnabledDesc": "限制引擎渲染频率以节省功耗",
+  "fpsLimitOff": "关闭（垂直同步）",
   "targetFrameRate": "目标帧率",
-  "targetFrameRateDesc": "限制引擎 Tick 速率",
+  "targetFrameRateDesc": "启用限制时的最大渲染频率",
   "fpsLabel": "{fps} FPS",
 
   "settingsGeneral": "通用",

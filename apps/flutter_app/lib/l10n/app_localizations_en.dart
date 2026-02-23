@@ -185,10 +185,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get performanceOverlayDesc => 'Show FPS and graphics API info';
 
   @override
+  String get fpsLimitEnabled => 'Frame Rate Limit';
+
+  @override
+  String get fpsLimitEnabledDesc =>
+      'Limit engine rendering frequency to save power';
+
+  @override
+  String get fpsLimitOff => 'Off (VSync)';
+
+  @override
   String get targetFrameRate => 'Target Frame Rate';
 
   @override
-  String get targetFrameRateDesc => 'Limits engine tick rate';
+  String get targetFrameRateDesc =>
+      'Maximum rendering frequency when limit is enabled';
 
   @override
   String fpsLabel(int fps) {

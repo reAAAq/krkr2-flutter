@@ -3,6 +3,7 @@
 #if defined(ENGINE_API_USE_KRKR2_RUNTIME)
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <deque>
@@ -53,6 +54,12 @@ struct engine_handle_s {
   bool native_mouse_callbacks_disabled = false;
   bool iosurface_attached = false;
   bool frame_rendered_this_tick = false;
+
+  // Frame rate limiting (0 = unlimited / follow vsync)
+  uint32_t fps_limit = 0;
+  uint64_t frame_interval_us = 0;
+  std::chrono::steady_clock::time_point last_render_time{};
+  bool fps_limit_initialized = false;
 };
 
 namespace {
@@ -599,6 +606,45 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
         "runtime has been terminated");
   }
 
+  // Frame rate limiting: when fps_limit > 0, skip rendering if not enough
+  // time has elapsed since the last rendered frame. Input events above are
+  // always processed regardless of the limit.
+  if (impl->fps_limit > 0) {
+    const auto now = std::chrono::steady_clock::now();
+    if (impl->fps_limit_initialized) {
+      const auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(
+          now - impl->last_render_time).count();
+      if (static_cast<uint64_t>(elapsed_us) < impl->frame_interval_us) {
+        // Not yet time for next frame — skip rendering
+        impl->frame_rendered_this_tick = false;
+        ClearHandleErrorLocked(impl);
+        SetThreadError(nullptr);
+        return ENGINE_RESULT_OK;
+      }
+      // Advance the deadline by exactly one frame interval instead of
+      // snapping to `now`. This eliminates the cumulative drift that
+      // occurs when vsync intervals don't evenly divide the target
+      // frame interval (e.g. 60 Hz vsync vs 30 fps target: 16.6 ms
+      // does not divide 33.3 ms evenly, causing every other frame to
+      // wait an extra vsync and dropping to ~20-24 fps).
+      //
+      // If we've fallen behind by more than one full interval (e.g.
+      // the app was suspended), snap to `now` to avoid a burst of
+      // catch-up renders.
+      const auto ideal_next = impl->last_render_time +
+          std::chrono::microseconds(impl->frame_interval_us);
+      if (now - ideal_next > std::chrono::microseconds(impl->frame_interval_us)) {
+        // Fallen too far behind — reset to now
+        impl->last_render_time = now;
+      } else {
+        impl->last_render_time = ideal_next;
+      }
+    } else {
+      impl->last_render_time = now;
+      impl->fps_limit_initialized = true;
+    }
+  }
+
   // Drive one full frame (scene update + render + swap). In host mode
   // we must call Application->Run() which processes messages, triggers
   // scene composition, and invokes BasicDrawDevice::Show() →
@@ -770,6 +816,21 @@ engine_result_t engine_set_option(engine_handle_t handle,
   result = ValidateHandleThreadLocked(impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
+  }
+
+  // Handle fps_limit option: controls C++ side frame rate throttling
+  const std::string key(option->key_utf8);
+  if (key == "fps_limit") {
+    const int fps = std::atoi(option->value_utf8);
+    impl->fps_limit = fps > 0 ? static_cast<uint32_t>(fps) : 0;
+    impl->frame_interval_us = fps > 0 ? (1000000u / static_cast<uint32_t>(fps)) : 0;
+    // Reset timing so the next tick renders immediately
+    impl->fps_limit_initialized = false;
+    spdlog::info("engine_set_option: fps_limit={} (interval={}us)",
+                 impl->fps_limit, impl->frame_interval_us);
+    ClearHandleErrorLocked(impl);
+    SetThreadError(nullptr);
+    return ENGINE_RESULT_OK;
   }
 
   TVPSetCommandLine(ttstr(option->key_utf8).c_str(), ttstr(option->value_utf8));

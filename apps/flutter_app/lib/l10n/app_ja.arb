@@ -64,8 +64,11 @@
   "software": "ソフトウェア",
   "performanceOverlay": "パフォーマンスオーバーレイ",
   "performanceOverlayDesc": "FPSとグラフィックAPI情報を表示",
+  "fpsLimitEnabled": "フレームレート制限",
+  "fpsLimitEnabledDesc": "エンジンの描画頻度を制限して省電力",
+  "fpsLimitOff": "オフ（VSync）",
   "targetFrameRate": "目標フレームレート",
-  "targetFrameRateDesc": "エンジンのTick速度を制限",
+  "targetFrameRateDesc": "制限有効時の最大描画頻度",
   "fpsLabel": "{fps} FPS",
 
   "settingsGeneral": "一般",

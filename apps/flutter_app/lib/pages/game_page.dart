@@ -35,6 +35,7 @@ class _GamePageState extends State<GamePage>
       GlobalKey<EngineSurfaceState>();
 
   static const String _perfOverlayKey = 'krkr2_perf_overlay';
+  static const String _fpsLimitEnabledKey = 'krkr2_fps_limit_enabled';
   static const String _targetFpsKey = 'krkr2_target_fps';
   static const String _rendererKey = 'krkr2_renderer';
   static const int _defaultFps = 60;
@@ -52,10 +53,7 @@ class _GamePageState extends State<GamePage>
 
   // Frame rate
   int _targetFps = _defaultFps;
-  /// How many vsync ticks to skip between engine ticks.
-  /// e.g. 0 = every vsync (60 FPS on a 60 Hz display),
-  ///      1 = every other vsync (30 FPS on a 60 Hz display).
-  int _vsyncSkip = 0;
+  bool _fpsLimitEnabled = false;
 
   // Performance overlay
   bool _showPerfOverlay = false;
@@ -168,6 +166,9 @@ class _GamePageState extends State<GamePage>
     }
     _log('engine_open_game => OK');
 
+    // Apply frame rate limit setting to the C++ engine layer
+    await _applyFpsLimit();
+
     if (!mounted) return;
     setState(() => _phase = _EnginePhase.running);
     _fetchRendererInfo();
@@ -185,22 +186,20 @@ class _GamePageState extends State<GamePage>
 
   // --- Tick loop (vsync-driven) ---
 
+  // Track the elapsed timestamp of the last *rendered* frame so that
+  // reportFrameDelta receives the true inter-frame interval instead of
+  // the vsync interval (which is always ~16ms on a 60Hz display).
+  Duration _lastRenderedElapsed = Duration.zero;
+
   void _startTickLoop() {
     if (_isTicking) return;
     setState(() => _isTicking = true);
     _log('Tick loop started');
 
     Duration lastElapsed = Duration.zero;
-    int vsyncCounter = 0;
+    _lastRenderedElapsed = Duration.zero;
     _ticker = Ticker((Duration elapsed) async {
       if (_tickInFlight) return;
-
-      // Throttle: skip vsync ticks to match target FPS
-      if (_vsyncSkip > 0) {
-        vsyncCounter++;
-        if (vsyncCounter <= _vsyncSkip) return;
-        vsyncCounter = 0;
-      }
 
       final int deltaMs = lastElapsed == Duration.zero
           ? 16
@@ -224,11 +223,24 @@ class _GamePageState extends State<GamePage>
           return;
         }
 
-        // Report frame delta to the performance overlay
-        _perfOverlayKey0.currentState?.reportFrameDelta(deltaMs.toDouble());
+        // Read the rendered flag exactly once. We pass it to pollFrame()
+        // so that engine_surface does NOT read it a second time (which
+        // would always see false because the flag is reset on read).
+        final bool rendered =
+            await _bridge.engineGetFrameRenderedFlag();
+        if (rendered) {
+          // Compute the real inter-render interval for accurate FPS.
+          final int renderDeltaMs = _lastRenderedElapsed == Duration.zero
+              ? deltaMs
+              : (elapsed - _lastRenderedElapsed).inMilliseconds.clamp(1, 200);
+          _lastRenderedElapsed = elapsed;
 
-        // Poll frame immediately after tick
-        await _surfaceKey.currentState?.pollFrame();
+          _perfOverlayKey0.currentState
+              ?.reportFrameDelta(renderDeltaMs.toDouble());
+          // Poll frame immediately after tick, passing the flag so
+          // engine_surface skips its own flag read.
+          await _surfaceKey.currentState?.pollFrame(rendered: true);
+        }
         _tickCount += 1;
 
         if (_tickCount % 300 == 0) {
@@ -323,28 +335,25 @@ class _GamePageState extends State<GamePage>
     final prefs = await SharedPreferences.getInstance();
     if (mounted) {
       final fps = prefs.getInt(_targetFpsKey) ?? _defaultFps;
+      final fpsLimitEnabled = prefs.getBool(_fpsLimitEnabledKey) ?? false;
       setState(() {
         _showPerfOverlay = prefs.getBool(_perfOverlayKey) ?? false;
         _targetFps = fps;
-        _updateVsyncSkip();
+        _fpsLimitEnabled = fpsLimitEnabled;
       });
     }
   }
 
-  /// Recalculate how many vsync ticks to skip based on _targetFps.
-  /// Assumes the display runs at ~60 Hz (Flutter's default Ticker rate).
-  void _updateVsyncSkip() {
-    const int displayHz = 60;
-    if (_targetFps >= displayHz) {
-      // 60 FPS or higher → tick every vsync
-      _vsyncSkip = 0;
-    } else if (_targetFps > 0) {
-      // e.g. 30 FPS → skip = round(60/30) - 1 = 1 (tick every 2nd vsync)
-      _vsyncSkip = (displayHz / _targetFps).round() - 1;
-      if (_vsyncSkip < 0) _vsyncSkip = 0;
-    } else {
-      _vsyncSkip = 0;
-    }
+  /// Apply the current fps_limit setting to the C++ engine layer.
+  /// When disabled (fpsLimitEnabled=false), sends fps_limit=0 so the
+  /// engine renders every vsync. When enabled, sends the target FPS value.
+  Future<void> _applyFpsLimit() async {
+    final int fpsValue = _fpsLimitEnabled ? _targetFps : 0;
+    _log('Setting fps_limit=$fpsValue (enabled=$_fpsLimitEnabled, target=$_targetFps)');
+    await _bridge.engineSetOption(
+      key: 'fps_limit',
+      value: fpsValue.toString(),
+    );
   }
 
   void _fetchRendererInfo() {

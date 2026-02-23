@@ -15,6 +15,7 @@ class SettingsPage extends StatefulWidget {
     required this.builtInDylibPath,
     required this.builtInAvailable,
     required this.perfOverlay,
+    required this.fpsLimitEnabled,
     required this.targetFps,
     required this.renderer,
   });
@@ -24,6 +25,7 @@ class SettingsPage extends StatefulWidget {
   final String? builtInDylibPath;
   final bool builtInAvailable;
   final bool perfOverlay;
+  final bool fpsLimitEnabled;
   final int targetFps;
   final String renderer;
 
@@ -37,6 +39,7 @@ class SettingsResult {
     required this.engineMode,
     required this.customDylibPath,
     required this.perfOverlay,
+    required this.fpsLimitEnabled,
     required this.targetFps,
     required this.renderer,
   });
@@ -44,6 +47,7 @@ class SettingsResult {
   final EngineMode engineMode;
   final String? customDylibPath;
   final bool perfOverlay;
+  final bool fpsLimitEnabled;
   final int targetFps;
   final String renderer;
 }
@@ -52,6 +56,7 @@ class _SettingsPageState extends State<SettingsPage> {
   static const String _dylibPathKey = 'krkr2_dylib_path';
   static const String _engineModeKey = 'krkr2_engine_mode';
   static const String _perfOverlayKey = 'krkr2_perf_overlay';
+  static const String _fpsLimitEnabledKey = 'krkr2_fps_limit_enabled';
   static const String _targetFpsKey = 'krkr2_target_fps';
   static const String _rendererKey = 'krkr2_renderer';
   static const String _localeKey = 'krkr2_locale';
@@ -61,6 +66,7 @@ class _SettingsPageState extends State<SettingsPage> {
   late EngineMode _engineMode;
   late String? _customDylibPath;
   late bool _perfOverlay;
+  late bool _fpsLimitEnabled;
   late int _targetFps;
   late String _renderer;
   String _localeCode = 'system';
@@ -73,6 +79,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _engineMode = widget.engineMode;
     _customDylibPath = widget.customDylibPath;
     _perfOverlay = widget.perfOverlay;
+    _fpsLimitEnabled = widget.fpsLimitEnabled;
     _targetFps = widget.targetFps;
     _renderer = widget.renderer;
     _loadLocale();
@@ -109,6 +116,7 @@ class _SettingsPageState extends State<SettingsPage> {
       await prefs.remove(_dylibPathKey);
     }
     await prefs.setBool(_perfOverlayKey, _perfOverlay);
+    await prefs.setBool(_fpsLimitEnabledKey, _fpsLimitEnabled);
     await prefs.setInt(_targetFpsKey, _targetFps);
     await prefs.setString(_rendererKey, _renderer);
 
@@ -119,6 +127,7 @@ class _SettingsPageState extends State<SettingsPage> {
           engineMode: _engineMode,
           customDylibPath: _customDylibPath,
           perfOverlay: _perfOverlay,
+          fpsLimitEnabled: _fpsLimitEnabled,
           targetFps: _targetFps,
           renderer: _renderer,
         ),
@@ -309,25 +318,41 @@ class _SettingsPageState extends State<SettingsPage> {
                     },
                   ),
                   const Divider(height: 1),
-                  ListTile(
-                    title: Text(l10n.targetFrameRate),
-                    subtitle: Text(l10n.targetFrameRateDesc),
-                    trailing: DropdownButton<int>(
-                      value: _targetFps,
-                      items: _fpsOptions
-                          .map((fps) => DropdownMenuItem<int>(
-                                value: fps,
-                                child: Text(l10n.fpsLabel(fps)),
-                              ))
-                          .toList(),
-                      onChanged: (value) {
-                        if (value != null) {
-                          setState(() => _targetFps = value);
-                          _markDirty();
-                        }
-                      },
+                  SwitchListTile(
+                    title: Text(l10n.fpsLimitEnabled),
+                    subtitle: Text(
+                      _fpsLimitEnabled
+                          ? l10n.fpsLimitEnabledDesc
+                          : l10n.fpsLimitOff,
                     ),
+                    value: _fpsLimitEnabled,
+                    onChanged: (value) {
+                      setState(() => _fpsLimitEnabled = value);
+                      _markDirty();
+                    },
                   ),
+                  if (_fpsLimitEnabled) ...[
+                    const Divider(height: 1),
+                    ListTile(
+                      title: Text(l10n.targetFrameRate),
+                      subtitle: Text(l10n.targetFrameRateDesc),
+                      trailing: DropdownButton<int>(
+                        value: _targetFps,
+                        items: _fpsOptions
+                            .map((fps) => DropdownMenuItem<int>(
+                                  value: fps,
+                                  child: Text(l10n.fpsLabel(fps)),
+                                ))
+                            .toList(),
+                        onChanged: (value) {
+                          if (value != null) {
+                            setState(() => _targetFps = value);
+                            _markDirty();
+                          }
+                        },
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

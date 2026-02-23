@@ -178,10 +178,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get performanceOverlayDesc => '显示帧率和图形 API 信息';
 
   @override
+  String get fpsLimitEnabled => '帧率限制';
+
+  @override
+  String get fpsLimitEnabledDesc => '限制引擎渲染频率以节省功耗';
+
+  @override
+  String get fpsLimitOff => '关闭（垂直同步）';
+
+  @override
   String get targetFrameRate => '目标帧率';
 
   @override
-  String get targetFrameRateDesc => '限制引擎 Tick 速率';
+  String get targetFrameRateDesc => '启用限制时的最大渲染频率';
 
   @override
   String fpsLabel(int fps) {

@@ -79,8 +79,11 @@
   "software": "Software",
   "performanceOverlay": "Performance Overlay",
   "performanceOverlayDesc": "Show FPS and graphics API info",
+  "fpsLimitEnabled": "Frame Rate Limit",
+  "fpsLimitEnabledDesc": "Limit engine rendering frequency to save power",
+  "fpsLimitOff": "Off (VSync)",
   "targetFrameRate": "Target Frame Rate",
-  "targetFrameRateDesc": "Limits engine tick rate",
+  "targetFrameRateDesc": "Maximum rendering frequency when limit is enabled",
   "fpsLabel": "{fps} FPS",
   "@fpsLabel": {
     "placeholders": {

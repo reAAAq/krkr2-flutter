@@ -424,6 +424,24 @@ abstract class AppLocalizations {
   /// **'Show FPS and graphics API info'**
   String get performanceOverlayDesc;
 
+  /// No description provided for @fpsLimitEnabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Frame Rate Limit'**
+  String get fpsLimitEnabled;
+
+  /// No description provided for @fpsLimitEnabledDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Limit engine rendering frequency to save power'**
+  String get fpsLimitEnabledDesc;
+
+  /// No description provided for @fpsLimitOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Off (VSync)'**
+  String get fpsLimitOff;
+
   /// No description provided for @targetFrameRate.
   ///
   /// In en, this message translates to:
@@ -433,7 +451,7 @@ abstract class AppLocalizations {
   /// No description provided for @targetFrameRateDesc.
   ///
   /// In en, this message translates to:
-  /// **'Limits engine tick rate'**
+  /// **'Maximum rendering frequency when limit is enabled'**
   String get targetFrameRateDesc;
 
   /// No description provided for @fpsLabel.

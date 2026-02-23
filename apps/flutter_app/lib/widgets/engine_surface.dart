@@ -145,7 +145,12 @@ class EngineSurfaceState extends State<EngineSurface> {
   /// Public entry point for the parent tick loop to drive frame polling.
   /// Call this immediately after [EngineBridge.engineTick] completes
   /// to eliminate the dual-timer phase mismatch.
-  Future<void> pollFrame() => _pollFrame();
+  ///
+  /// When [rendered] is provided (non-null), the IOSurface path uses it
+  /// directly instead of calling [engineGetFrameRenderedFlag] again.
+  /// This avoids the double-read problem where the flag is reset on the
+  /// first read and the second read always sees false.
+  Future<void> pollFrame({bool? rendered}) => _pollFrame(externalRendered: rendered);
 
   Future<void> _ensureSurfaceSize(Size size, double devicePixelRatio) async {
     if (!widget.active) {
@@ -368,7 +373,7 @@ class EngineSurfaceState extends State<EngineSurface> {
 
   // --- Frame polling ---
 
-  Future<void> _pollFrame() async {
+  Future<void> _pollFrame({bool? externalRendered}) async {
     if (!widget.active || _frameInFlight) {
       return;
     }
@@ -377,7 +382,11 @@ class EngineSurfaceState extends State<EngineSurface> {
     try {
       // IOSurface zero-copy mode: just notify Flutter, no pixel transfer
       if (_ioSurfaceTextureId != null) {
-        final bool rendered =
+        // When the caller already checked the flag (external tick-driven
+        // mode), use that value directly to avoid the double-read problem.
+        // engineGetFrameRenderedFlag resets the flag on read, so a second
+        // read would always return false.
+        final bool rendered = externalRendered ??
             await widget.bridge.engineGetFrameRenderedFlag();
         if (rendered && mounted) {
           await widget.bridge.notifyFrameAvailable(
