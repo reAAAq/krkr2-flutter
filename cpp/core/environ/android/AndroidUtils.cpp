@@ -10,18 +10,14 @@
 #include "DebugIntf.h"
 #include <condition_variable>
 #include <mutex>
-#include "platform/android/jni/JniHelper.h"
+#include "KrkrJniHelper.h"
 #include <set>
 #include <sstream>
 #include "SysInitIntf.h"
-#include "platform/CCFileUtils.h"
 #include "ConfigManager/LocaleConfigManager.h"
 #include "Platform.h"
-#include "platform/CCCommon.h"
 #include <EGL/egl.h>
 #include <queue>
-#include "base/CCDirector.h"
-#include "base/CCScheduler.h"
 #include <unistd.h>
 #include <fcntl.h>
 #include <android/log.h>
@@ -31,11 +27,17 @@
 #include "EventIntf.h"
 #include "RenderManager.h"
 #include <sys/stat.h>
+#include <cerrno>
 
-USING_NS_CC;
+using JniHelper = krkr::JniHelper;
+using JniMethodInfo = krkr::JniHelper::MethodInfo;
 
 #define KR2ActJavaPath "org/tvp/kirikiri2/KR2Activity"
 // #define KR2EntryJavaPath "org/tvp/kirikiri2/Kirikiroid2"
+
+// Declared in krkr2_android.cpp – provides the Flutter Application Context
+// as a fallback when KR2Activity is not available.
+extern jobject krkr_GetApplicationContext();
 
 extern unsigned int __page_size = getpagesize();
 
@@ -185,6 +187,18 @@ static jobject GetKR2ActInstance() {
         methodInfo.env->DeleteLocalRef(methodInfo.classID);
         return ret;
     }
+    // Fallback for Flutter mode: KR2Activity doesn't exist,
+    // use the Application Context stored by the Flutter plugin.
+    // Create a new local ref so callers can safely DeleteLocalRef on it.
+    jobject ctx = krkr_GetApplicationContext();
+    if (ctx) {
+        JNIEnv* env = JniHelper::getEnv();
+        if (env) {
+            return env->NewLocalRef(ctx);
+        }
+    }
+    __android_log_print(ANDROID_LOG_ERROR, "krkr2",
+        "GetKR2ActInstance: no KR2Activity and no Application Context available");
     return 0;
 }
 
@@ -254,7 +268,7 @@ public:
     }
     bool GetData(std::vector<unsigned char> &buff, const char *filename) {
         bool ret = false;
-        if(unzLocateFile(uf, filename, nullptr) == UNZ_OK) {
+        if(unzLocateFile(uf, filename, 0) == UNZ_OK) {
             int result = unzOpenCurrentFile(uf);
             if(result == UNZ_OK) {
                 unz_file_info info;
@@ -340,7 +354,7 @@ static std::string File_getAbsolutePath(jobject FileObj) {
         return "";
     jstring path =
         (jstring)methodInfo.env->CallObjectMethod(FileObj, methodInfo.methodID);
-    std::string ret = cocos2d::JniHelper::jstring2string(path);
+    std::string ret = JniHelper::jstring2string(path);
     return ret;
 }
 
@@ -424,7 +438,7 @@ std::vector<std::string> TVPGetDriverPath() {
                 jstring path =
                     (jstring)methodInfo.env->GetObjectArrayElement(PathObjs, i);
                 if(path)
-                    ret.emplace_back(cocos2d::JniHelper::jstring2string(path));
+                    ret.emplace_back(JniHelper::jstring2string(path));
             }
         }
     }
@@ -697,16 +711,10 @@ bool TVPCheckStartupArg() {
     TVPCheckAndSendDumps(Android_GetDumpStoragePath(), GetPackageName(),
                          TVPGetPackageVersionString());
 
-    // register event dispatcher
-    cocos2d::Director *director = cocos2d::Director::getInstance();
-    class HackForScheduler : public cocos2d::Scheduler {
-    public:
-        void regProcessEvents() {
-            schedulePerFrame(_processEvents, &_lastQueuedEvents, -1, false);
-        }
-    };
-    static_cast<HackForScheduler *>(director->getScheduler())
-        ->regProcessEvents();
+    // Event processing is now driven by engine_api tick loop.
+    // The old cocos2d Scheduler-based _processEvents registration
+    // has been removed. Events are processed via Android_PushEvents()
+    // which is called during engine_tick.
 
     return false;
 }
@@ -807,6 +815,20 @@ bool TVPCheckStartupPath(const std::string &path) {
     return true;
 }
 
+// POSIX fallback: recursively create directories
+static bool _posix_mkdirs(const std::string &path) {
+    if (path.empty()) return false;
+    std::string tmp = path;
+    for (size_t i = 1; i < tmp.size(); ++i) {
+        if (tmp[i] == '/') {
+            tmp[i] = '\0';
+            mkdir(tmp.c_str(), 0755);
+            tmp[i] = '/';
+        }
+    }
+    return mkdir(tmp.c_str(), 0755) == 0 || errno == EEXIST;
+}
+
 bool TVPCreateFolders(const ttstr &folder) {
     JniMethodInfo methodInfo;
     if(JniHelper::getStaticMethodInfo(
@@ -820,7 +842,8 @@ bool TVPCreateFolders(const ttstr &folder) {
         methodInfo.env->DeleteLocalRef(methodInfo.classID);
         return ret;
     }
-    return false;
+    // POSIX fallback for Flutter mode (no KR2Activity)
+    return _posix_mkdirs(folder.AsStdString());
 }
 
 static bool TVPWriteDataToFileJava(const std::string &filename,
@@ -829,7 +852,6 @@ static bool TVPWriteDataToFileJava(const std::string &filename,
     if(JniHelper::getStaticMethodInfo(methodInfo,
                                       "org/tvp/kirikiri2/KR2Activity",
                                       "WriteFile", "(Ljava/lang/String;[B)Z")) {
-        cocos2d::FileUtils *fileutil = cocos2d::FileUtils::getInstance();
         bool ret = false;
         int retry = 3;
         do {
@@ -841,7 +863,7 @@ static bool TVPWriteDataToFileJava(const std::string &filename,
             methodInfo.env->DeleteLocalRef(arr);
             methodInfo.env->DeleteLocalRef(jstr);
             methodInfo.env->DeleteLocalRef(methodInfo.classID);
-        } while(!fileutil->isFileExist(filename) && --retry);
+        } while(access(filename.c_str(), F_OK) != 0 && --retry);
         return ret;
     }
     return false;
@@ -850,8 +872,7 @@ static bool TVPWriteDataToFileJava(const std::string &filename,
 bool TVPWriteDataToFile(const ttstr &filepath, const void *data,
                         unsigned int size) {
     std::string filename = filepath.AsStdString();
-    cocos2d::FileUtils *fileutil = cocos2d::FileUtils::getInstance();
-    while(fileutil->isFileExist(filename)) {
+    while(access(filename.c_str(), F_OK) == 0) {
         // for number filename suffix issue
         time_t t = time(nullptr);
         std::vector<char> buffer;
@@ -869,7 +890,7 @@ bool TVPWriteDataToFile(const ttstr &filepath, const void *data,
             }
         }
         bool ret = TVPWriteDataToFileJava(filename, data, size);
-        if(fileutil->isFileExist(tempname.c_str())) {
+        if(access(tempname.c_str(), F_OK) == 0) {
             TVPDeleteFile(tempname);
         }
         return ret;
@@ -898,19 +919,34 @@ std::string TVPGetCurrentLanguage() {
         t.env->DeleteLocalRef(str);
     }
 
+    // Fallback for Flutter mode: use standard Java Locale API
+    if(ret.empty()) {
+        ret = TVPGetDeviceLanguage();
+    }
+
     return ret;
 }
 
 void TVPExitApplication(int code) {
     TVPDeliverCompactEvent(TVP_COMPACT_LEVEL_MAX);
-    if(!TVPIsSoftwareRenderManager())
-        iTVPTexture2D::RecycleProcess();
+    // Guard: only recycle textures if the render manager was already
+    // initialised.  Calling TVPIsSoftwareRenderManager() when no
+    // render manager exists would trigger OpenGL init (which needs a
+    // valid GL context that may not exist in Flutter mode).
+    try {
+        if(!TVPIsSoftwareRenderManager())
+            iTVPTexture2D::RecycleProcess();
+    } catch(...) {
+        // Ignore – we are shutting down anyway.
+    }
     JniMethodInfo t;
     if(JniHelper::getStaticMethodInfo(t, "org/tvp/kirikiri2/KR2Activity",
                                       "exit", "()V")) {
         t.env->CallStaticVoidMethod(t.classID, t.methodID);
         t.env->DeleteLocalRef(t.classID);
     }
+    // In Flutter mode, KR2Activity.exit() is not available.
+    // Just call exit() directly.
     exit(code);
 }
 
@@ -948,7 +984,8 @@ bool TVPDeleteFile(const std::string &filename) {
         methodInfo.env->DeleteLocalRef(methodInfo.classID);
         return ret;
     }
-    return false;
+    // POSIX fallback for Flutter mode
+    return remove(filename.c_str()) == 0;
 }
 
 bool TVPRenameFile(const std::string &from, const std::string &to) {
@@ -965,7 +1002,8 @@ bool TVPRenameFile(const std::string &from, const std::string &to) {
         methodInfo.env->DeleteLocalRef(methodInfo.classID);
         return ret;
     }
-    return false;
+    // POSIX fallback for Flutter mode
+    return rename(from.c_str(), to.c_str()) == 0;
 }
 
 tjs_uint32 TVPGetRoughTickCount32() {
