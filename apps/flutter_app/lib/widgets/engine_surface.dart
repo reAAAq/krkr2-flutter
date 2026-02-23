@@ -389,9 +389,8 @@ class EngineSurfaceState extends State<EngineSurface> {
 
       // The SurfaceTexture/Surface is already passed to C++ via JNI
       // in the Kotlin plugin's createSurfaceTexture method.
-      // The C++ engine_api will attach the ANativeWindow as the
-      // render target via engine_set_render_target_surface (called
-      // from the JNI bridge in krkr2_android.cpp).
+      // The C++ engine_tick() will auto-detect the pending ANativeWindow
+      // and attach it as the EGL WindowSurface render target.
 
       final ui.Image? previousImage = _frameImage;
       setState(() {

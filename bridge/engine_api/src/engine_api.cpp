@@ -3,6 +3,7 @@
 #if defined(ENGINE_API_USE_KRKR2_RUNTIME)
 
 #include <algorithm>
+#include <cstdarg>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -17,6 +18,13 @@
 
 #include <csignal>
 #include <cstdlib>
+#if defined(__ANDROID__)
+#include <android/log.h>
+#include <android/native_window.h>
+// Defined in krkr2_android.cpp (C++ linkage)
+ANativeWindow* krkr_GetNativeWindow();
+void krkr_GetSurfaceDimensions(uint32_t*, uint32_t*);
+#endif
 #if !defined(__ANDROID__)
 #include <execinfo.h>
 #endif
@@ -66,6 +74,15 @@ struct engine_handle_s {
 };
 
 namespace {
+
+#if defined(__ANDROID__)
+void AndroidInfoLog(const char* fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+  __android_log_vprint(ANDROID_LOG_INFO, "krkr2", fmt, args);
+  va_end(args);
+}
+#endif
 
 enum class EngineState {
   kCreated = 0,
@@ -498,14 +515,33 @@ engine_result_t engine_open_game(engine_handle_t handle,
   // Initialize loggers early so signal handlers and flush-on-debug are active
   EnsureRuntimeLoggersInitialized();
 
-  spdlog::info("engine_open_game: runtime initialized, starting application with path: {}", game_root_path_utf8);
+  std::string normalized_game_root_path(game_root_path_utf8);
+  if (!normalized_game_root_path.empty() &&
+      normalized_game_root_path.back() != '/' &&
+      normalized_game_root_path.back() != '\\') {
+    normalized_game_root_path.push_back('/');
+  }
+
+  spdlog::info("engine_open_game: runtime initialized, starting application with path: {} (normalized: {})",
+               game_root_path_utf8, normalized_game_root_path);
+#if defined(__ANDROID__)
+  AndroidInfoLog("engine_open_game: input='%s' normalized='%s'",
+                 game_root_path_utf8, normalized_game_root_path.c_str());
+#endif
   spdlog::default_logger()->flush();
 
   try {
     spdlog::debug("engine_open_game: calling Application->StartApplication...");
+#if defined(__ANDROID__)
+    AndroidInfoLog("engine_open_game: calling StartApplication('%s')",
+                   normalized_game_root_path.c_str());
+#endif
     spdlog::default_logger()->flush();
-    Application->StartApplication(ttstr(game_root_path_utf8));
+    Application->StartApplication(ttstr(normalized_game_root_path.c_str()));
     spdlog::info("engine_open_game: StartApplication returned successfully");
+#if defined(__ANDROID__)
+    AndroidInfoLog("engine_open_game: StartApplication returned successfully");
+#endif
   } catch (const std::exception& e) {
     spdlog::error("engine_open_game: StartApplication threw std::exception: {}", e.what());
     return SetHandleErrorAndReturnLocked(impl, ENGINE_RESULT_INTERNAL_ERROR,
@@ -604,6 +640,53 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
     }
   }
 
+#if defined(__ANDROID__)
+  // Auto-attach pending ANativeWindow from JNI bridge.
+  // The Kotlin plugin calls nativeSetSurface() which stores the
+  // ANativeWindow in a global variable. Here we detect it and
+  // attach it as the EGL WindowSurface render target so that
+  // eglSwapBuffers delivers frames to Flutter's SurfaceTexture.
+  if (!impl->native_window_attached) {
+    ANativeWindow* pending_window = krkr_GetNativeWindow();
+    if (pending_window) {
+      uint32_t win_w = 0, win_h = 0;
+      krkr_GetSurfaceDimensions(&win_w, &win_h);
+      auto& egl = krkr::GetEngineEGLContext();
+      if (egl.IsValid() && win_w > 0 && win_h > 0) {
+        if (egl.AttachNativeWindow(pending_window, win_w, win_h)) {
+          impl->native_window_attached = true;
+          spdlog::info("engine_tick: auto-attached ANativeWindow {}x{}", win_w, win_h);
+          AndroidInfoLog("engine_tick: auto-attached ANativeWindow %ux%u", win_w, win_h);
+          // Update window size for the draw device
+          if (TVPMainWindow) {
+            auto* dd = TVPMainWindow->GetDrawDevice();
+            if (dd) {
+              dd->SetWindowSize(static_cast<tjs_int>(win_w),
+                                static_cast<tjs_int>(win_h));
+            }
+          }
+        } else {
+          spdlog::warn("engine_tick: failed to attach ANativeWindow");
+        }
+      }
+      // Release the ref acquired by krkr_GetNativeWindow()
+      ANativeWindow_release(pending_window);
+    }
+  } else {
+    // Already attached — check if the JNI side has detached the window.
+    ANativeWindow* current_window = krkr_GetNativeWindow();
+    if (current_window) {
+      ANativeWindow_release(current_window);
+    } else {
+      // Window was detached from JNI side — revert to Pbuffer
+      auto& egl = krkr::GetEngineEGLContext();
+      egl.DetachNativeWindow();
+      impl->native_window_attached = false;
+      spdlog::info("engine_tick: ANativeWindow detached, reverted to Pbuffer mode");
+    }
+  }
+#endif
+
   if (TVPTerminated) {
     return SetHandleErrorAndReturnLocked(
         impl,
@@ -682,12 +765,9 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
   // In IOSurface mode, the engine renders directly to the shared IOSurface
   // via the FBO — no need for glReadPixels. Skip the expensive readback.
   if (impl->native_window_attached) {
-    // Android WindowSurface mode — eglSwapBuffers delivers frame
-    // to Flutter's SurfaceTexture automatically (GPU zero-copy).
-    auto& egl = krkr::GetEngineEGLContext();
-    if (egl.HasNativeWindow()) {
-      eglSwapBuffers(egl.GetDisplay(), egl.GetWindowSurface());
-    }
+    // Android WindowSurface mode — TVPForceSwapBuffer() (called by
+    // TVPDrawSceneOnce above) already performed eglSwapBuffers to deliver
+    // the frame to Flutter's SurfaceTexture. Just update frame tracking.
     impl->frame_serial += 1;
     impl->frame_ready = true;
   } else if (!impl->iosurface_attached) {
