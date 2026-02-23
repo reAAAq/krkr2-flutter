@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.Settings
+import android.util.Log
 import android.view.Surface
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.MethodCall
@@ -128,10 +129,12 @@ class FlutterEngineBridgePlugin :
 
                 surfaceTextures[textureId] = entry
                 surfaces[textureId] = surface
+                Log.i("krkr2", "plugin.createSurfaceTexture: id=$textureId size=${width}x$height")
 
                 // Pass the Surface to the C++ engine via JNI
                 try {
                     nativeSetSurface(surface, width, height)
+                    Log.i("krkr2", "plugin.nativeSetSurface: id=$textureId size=${width}x$height")
                 } catch (e: UnsatisfiedLinkError) {
                     android.util.Log.e("krkr2", "nativeSetSurface not available: ${e.message}")
                 }
@@ -156,12 +159,14 @@ class FlutterEngineBridgePlugin :
                 val entry = surfaceTextures[textureId]
                 if (entry != null) {
                     entry.surfaceTexture().setDefaultBufferSize(width, height)
+                    Log.i("krkr2", "plugin.resizeSurfaceTexture: id=$textureId size=${width}x$height")
 
                     // Update the C++ side with the new surface dimensions
                     val surface = surfaces[textureId]
                     if (surface != null) {
                         try {
                             nativeSetSurface(surface, width, height)
+                            Log.i("krkr2", "plugin.nativeSetSurface(resize): id=$textureId size=${width}x$height")
                         } catch (e: UnsatisfiedLinkError) {
                             android.util.Log.e("krkr2", "nativeSetSurface not available: ${e.message}")
                         }
@@ -187,6 +192,7 @@ class FlutterEngineBridgePlugin :
                 // Detach from the C++ engine
                 try {
                     nativeDetachSurface()
+                    Log.i("krkr2", "plugin.nativeDetachSurface: id=$textureId")
                 } catch (e: UnsatisfiedLinkError) {
                     android.util.Log.e("krkr2", "nativeDetachSurface not available: ${e.message}")
                 }
