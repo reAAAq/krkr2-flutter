@@ -39,6 +39,10 @@
 
   "lastPlayed": "上次游玩：{time}",
   "rename": "重命名",
+  "setCover": "设置封面",
+  "coverFromGallery": "从相册选择",
+  "coverFromCamera": "拍照",
+  "coverRemove": "移除封面",
 
   "settingsEngine": "引擎",
   "engineMode": "引擎模式",

@@ -111,6 +111,18 @@ class AppLocalizationsJa extends AppLocalizations {
   String get rename => '名前変更';
 
   @override
+  String get setCover => 'カバーを設定';
+
+  @override
+  String get coverFromGallery => 'ギャラリーから選択';
+
+  @override
+  String get coverFromCamera => '写真を撮る';
+
+  @override
+  String get coverRemove => 'カバーを削除';
+
+  @override
   String get settingsEngine => 'エンジン';
 
   @override

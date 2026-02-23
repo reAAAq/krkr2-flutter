@@ -39,6 +39,10 @@
 
   "lastPlayed": "最終プレイ：{time}",
   "rename": "名前変更",
+  "setCover": "カバーを設定",
+  "coverFromGallery": "ギャラリーから選択",
+  "coverFromCamera": "写真を撮る",
+  "coverRemove": "カバーを削除",
 
   "settingsEngine": "エンジン",
   "engineMode": "エンジンモード",

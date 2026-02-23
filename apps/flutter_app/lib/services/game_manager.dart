@@ -59,4 +59,13 @@ class GameManager {
       await _save();
     }
   }
+
+  /// Set a custom cover image path for a game.
+  Future<void> setCoverImage(String path, String? coverPath) async {
+    final index = _games.indexWhere((g) => g.path == path);
+    if (index >= 0) {
+      _games[index].coverPath = coverPath;
+      await _save();
+    }
+  }
 }

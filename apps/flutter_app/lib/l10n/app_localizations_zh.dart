@@ -109,6 +109,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get rename => '重命名';
 
   @override
+  String get setCover => '设置封面';
+
+  @override
+  String get coverFromGallery => '从相册选择';
+
+  @override
+  String get coverFromCamera => '拍照';
+
+  @override
+  String get coverRemove => '移除封面';
+
+  @override
   String get settingsEngine => '引擎';
 
   @override

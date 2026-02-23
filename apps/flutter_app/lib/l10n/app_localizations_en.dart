@@ -114,6 +114,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get rename => 'Rename';
 
   @override
+  String get setCover => 'Set Cover';
+
+  @override
+  String get coverFromGallery => 'Choose from Gallery';
+
+  @override
+  String get coverFromCamera => 'Take Photo';
+
+  @override
+  String get coverRemove => 'Remove Cover';
+
+  @override
   String get settingsEngine => 'Engine';
 
   @override

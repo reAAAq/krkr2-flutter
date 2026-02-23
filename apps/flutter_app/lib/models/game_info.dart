@@ -6,6 +6,7 @@ class GameInfo {
     required this.path,
     this.title,
     this.lastPlayed,
+    this.coverPath,
   });
 
   /// The root directory of the game.
@@ -16,6 +17,9 @@ class GameInfo {
 
   /// Last time the game was launched.
   DateTime? lastPlayed;
+
+  /// Custom cover image path. Null means use default icon.
+  String? coverPath;
 
   /// Display name: user-set title or the last directory component.
   String get displayTitle {
@@ -28,6 +32,7 @@ class GameInfo {
         'path': path,
         'title': title,
         'lastPlayed': lastPlayed?.toIso8601String(),
+        'coverPath': coverPath,
       };
 
   factory GameInfo.fromJson(Map<String, dynamic> json) => GameInfo(
@@ -36,6 +41,7 @@ class GameInfo {
         lastPlayed: json['lastPlayed'] != null
             ? DateTime.tryParse(json['lastPlayed'] as String)
             : null,
+        coverPath: json['coverPath'] as String?,
       );
 
   static List<GameInfo> listFromJsonString(String jsonString) {

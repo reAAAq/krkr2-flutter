@@ -54,6 +54,10 @@
     }
   },
   "rename": "Rename",
+  "setCover": "Set Cover",
+  "coverFromGallery": "Choose from Gallery",
+  "coverFromCamera": "Take Photo",
+  "coverRemove": "Remove Cover",
 
   "settingsEngine": "Engine",
   "engineMode": "Engine Mode",

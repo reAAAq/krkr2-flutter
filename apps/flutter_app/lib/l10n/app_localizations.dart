@@ -286,6 +286,30 @@ abstract class AppLocalizations {
   /// **'Rename'**
   String get rename;
 
+  /// No description provided for @setCover.
+  ///
+  /// In en, this message translates to:
+  /// **'Set Cover'**
+  String get setCover;
+
+  /// No description provided for @coverFromGallery.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose from Gallery'**
+  String get coverFromGallery;
+
+  /// No description provided for @coverFromCamera.
+  ///
+  /// In en, this message translates to:
+  /// **'Take Photo'**
+  String get coverFromCamera;
+
+  /// No description provided for @coverRemove.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove Cover'**
+  String get coverRemove;
+
   /// No description provided for @settingsEngine.
   ///
   /// In en, this message translates to:

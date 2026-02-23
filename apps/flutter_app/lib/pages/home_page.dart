@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -243,6 +244,74 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<void> _setCoverImage(GameInfo game) async {
+    final l10n = AppLocalizations.of(context)!;
+    final source = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: Text(l10n.coverFromGallery),
+              onTap: () => Navigator.pop(ctx, 'gallery'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: Text(l10n.coverFromCamera),
+              onTap: () => Navigator.pop(ctx, 'camera'),
+            ),
+            if (game.coverPath != null)
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                title: Text(l10n.coverRemove, style: const TextStyle(color: Colors.redAccent)),
+                onTap: () => Navigator.pop(ctx, 'remove'),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (source == null || !mounted) return;
+
+    if (source == 'remove') {
+      await _gameManager.setCoverImage(game.path, null);
+      if (mounted) setState(() {});
+      return;
+    }
+
+    final picker = ImagePicker();
+    final XFile? image = await picker.pickImage(
+      source: source == 'camera' ? ImageSource.camera : ImageSource.gallery,
+      maxWidth: 512,
+      maxHeight: 512,
+      imageQuality: 85,
+    );
+    if (image == null || !mounted) return;
+
+    // Copy image to app's persistent storage
+    final docDir = await getApplicationDocumentsDirectory();
+    final coversDir = Directory('${docDir.path}/covers');
+    if (!await coversDir.exists()) {
+      await coversDir.create(recursive: true);
+    }
+    final ext = image.path.split('.').last;
+    final fileName = '${game.path.hashCode}_${DateTime.now().millisecondsSinceEpoch}.$ext';
+    final destPath = '${coversDir.path}/$fileName';
+    await File(image.path).copy(destPath);
+
+    // Remove old cover file if exists
+    if (game.coverPath != null) {
+      try {
+        final oldFile = File(game.coverPath!);
+        if (await oldFile.exists()) await oldFile.delete();
+      } catch (_) {}
+    }
+
+    await _gameManager.setCoverImage(game.path, destPath);
+    if (mounted) setState(() {});
+  }
+
   Future<void> _renameGame(GameInfo game) async {
     final l10n = AppLocalizations.of(context)!;
     final controller = TextEditingController(text: game.displayTitle);
@@ -345,29 +414,22 @@ class _HomePageState extends State<HomePage> {
       appBar: AppBar(
         title: Text(l10n.appTitle),
         actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: Chip(
-              avatar: Icon(
-                _engineMode == EngineMode.builtIn
-                    ? Icons.inventory_2
-                    : Icons.extension,
-                size: 16,
-              ),
-              label: Text(
-                _engineMode == EngineMode.builtIn
-                    ? (_builtInAvailable
-                        ? l10n.builtInReady
-                        : l10n.builtInNotReady)
-                    : (_customDylibPath != null
-                        ? _customDylibPath!.split('/').last
-                        : l10n.customNotSet),
-                style: const TextStyle(fontSize: 12),
-              ),
-              backgroundColor: _effectiveDylibPath != null
-                  ? colorScheme.primaryContainer
-                  : colorScheme.errorContainer,
-              visualDensity: VisualDensity.compact,
+          Tooltip(
+            message: _engineMode == EngineMode.builtIn
+                ? (_builtInAvailable
+                    ? l10n.builtInReady
+                    : l10n.builtInNotReady)
+                : (_customDylibPath != null
+                    ? _customDylibPath!.split('/').last
+                    : l10n.customNotSet),
+            child: Icon(
+              _engineMode == EngineMode.builtIn
+                  ? Icons.inventory_2
+                  : Icons.extension,
+              color: _effectiveDylibPath != null
+                  ? colorScheme.primary
+                  : colorScheme.error,
+              size: 22,
             ),
           ),
           IconButton(
@@ -471,6 +533,7 @@ class _HomePageState extends State<HomePage> {
                 onTap: () => _launchGame(game),
                 onRename: () => _renameGame(game),
                 onRemove: () => _removeGame(game),
+                onSetCover: () => _setCoverImage(game),
               );
             },
           ),
@@ -487,6 +550,7 @@ class _GameCard extends StatelessWidget {
     required this.onTap,
     required this.onRename,
     required this.onRemove,
+    required this.onSetCover,
   });
 
   final GameInfo game;
@@ -494,6 +558,7 @@ class _GameCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onRename;
   final VoidCallback onRemove;
+  final VoidCallback onSetCover;
 
   @override
   Widget build(BuildContext context) {
@@ -518,12 +583,20 @@ class _GameCard extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: colorScheme.primaryContainer,
                   borderRadius: BorderRadius.circular(12),
+                  image: game.coverPath != null && File(game.coverPath!).existsSync()
+                      ? DecorationImage(
+                          image: FileImage(File(game.coverPath!)),
+                          fit: BoxFit.cover,
+                        )
+                      : null,
                 ),
-                child: Icon(
-                  Icons.videogame_asset,
-                  color: colorScheme.onPrimaryContainer,
-                  size: 28,
-                ),
+                child: game.coverPath != null && File(game.coverPath!).existsSync()
+                    ? null
+                    : Icon(
+                        Icons.videogame_asset,
+                        color: colorScheme.onPrimaryContainer,
+                        size: 28,
+                      ),
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -552,6 +625,9 @@ class _GameCard extends StatelessWidget {
               PopupMenuButton<String>(
                 onSelected: (value) {
                   switch (value) {
+                    case 'cover':
+                      onSetCover();
+                      break;
                     case 'rename':
                       onRename();
                       break;
@@ -561,6 +637,15 @@ class _GameCard extends StatelessWidget {
                   }
                 },
                 itemBuilder: (context) => [
+                  PopupMenuItem(
+                    value: 'cover',
+                    child: ListTile(
+                      leading: const Icon(Icons.image),
+                      title: Text(l10n.setCover),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                    ),
+                  ),
                   PopupMenuItem(
                     value: 'rename',
                     child: ListTile(

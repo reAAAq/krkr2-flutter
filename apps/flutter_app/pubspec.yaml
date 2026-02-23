@@ -42,6 +42,7 @@ dependencies:
   path_provider: ^2.1.0
   flutter_engine_bridge:
     path: ../../bridge/flutter_engine_bridge
+  image_picker: ^1.2.1
 
 dev_dependencies:
   flutter_test:
