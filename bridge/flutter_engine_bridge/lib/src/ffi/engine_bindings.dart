@@ -203,6 +203,11 @@ typedef _EngineSetRenderTargetIOSurfaceNative =
 typedef _EngineSetRenderTargetIOSurfaceDart =
     int Function(Pointer<Void>, int, int, int);
 
+typedef _EngineSetRenderTargetSurfaceNative =
+    Int32 Function(Pointer<Void>, Pointer<Void>, Uint32, Uint32);
+typedef _EngineSetRenderTargetSurfaceDart =
+    int Function(Pointer<Void>, Pointer<Void>, int, int);
+
 typedef _EngineGetFrameRenderedFlagNative =
     Int32 Function(Pointer<Void>, Pointer<Uint32>);
 typedef _EngineGetFrameRenderedFlagDart =
@@ -270,6 +275,11 @@ class EngineBindings {
             _EngineSetRenderTargetIOSurfaceNative,
             _EngineSetRenderTargetIOSurfaceDart
           >('engine_set_render_target_iosurface'),
+      engineSetRenderTargetSurface = library
+          .lookupFunction<
+            _EngineSetRenderTargetSurfaceNative,
+            _EngineSetRenderTargetSurfaceDart
+          >('engine_set_render_target_surface'),
       engineGetFrameRenderedFlag = library
           .lookupFunction<
             _EngineGetFrameRenderedFlagNative,
@@ -302,6 +312,8 @@ class EngineBindings {
   final int Function(Pointer<Void>, Pointer<EngineInputEvent>) engineSendInput;
   final int Function(Pointer<Void>, int, int, int)
   engineSetRenderTargetIOSurface;
+  final int Function(Pointer<Void>, Pointer<Void>, int, int)
+  engineSetRenderTargetSurface;
   final int Function(Pointer<Void>, Pointer<Uint32>)
   engineGetFrameRenderedFlag;
   final int Function(Pointer<Void>, Pointer<Utf8>, int)

@@ -95,4 +95,42 @@ class MethodChannelFlutterEngineBridge extends FlutterEngineBridgePlatform {
           'textureId': textureId,
         });
   }
+
+  @override
+  Future<Map<String, dynamic>?> createSurfaceTexture({
+    required int width,
+    required int height,
+  }) async {
+    final result = await methodChannel
+        .invokeMapMethod<String, dynamic>(
+            'createSurfaceTexture', <String, Object>{
+          'width': width,
+          'height': height,
+        });
+    return result;
+  }
+
+  @override
+  Future<Map<String, dynamic>?> resizeSurfaceTexture({
+    required int textureId,
+    required int width,
+    required int height,
+  }) async {
+    final result = await methodChannel
+        .invokeMapMethod<String, dynamic>(
+            'resizeSurfaceTexture', <String, Object>{
+          'textureId': textureId,
+          'width': width,
+          'height': height,
+        });
+    return result;
+  }
+
+  @override
+  Future<void> disposeSurfaceTexture({required int textureId}) async {
+    await methodChannel
+        .invokeMethod<void>('disposeSurfaceTexture', <String, Object>{
+          'textureId': textureId,
+        });
+  }
 }

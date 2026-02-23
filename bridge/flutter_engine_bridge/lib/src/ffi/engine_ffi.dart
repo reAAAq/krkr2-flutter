@@ -319,6 +319,19 @@ class EngineFfiBridge {
     );
   }
 
+  /// Android: set render target surface.
+  /// On Android, the surface is set via JNI (nativeSetSurface) from the
+  /// Kotlin plugin. This FFI call is used to explicitly detach (pass nullptr).
+  int setRenderTargetSurface({
+    required int width,
+    required int height,
+  }) {
+    // Pass nullptr to detach the surface render target
+    return _bindings.engineSetRenderTargetSurface(
+      _handle, nullptr, width, height,
+    );
+  }
+
   bool getFrameRenderedFlag() {
     final outFlag = calloc<Uint32>();
     try {

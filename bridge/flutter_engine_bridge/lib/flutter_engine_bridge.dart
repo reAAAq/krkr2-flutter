@@ -297,6 +297,50 @@ class FlutterEngineBridge {
     }
   }
 
+  /// Creates a SurfaceTexture-backed texture for zero-copy rendering (Android).
+  /// Returns a map with: textureId, width, height.
+  Future<Map<String, dynamic>?> createSurfaceTexture({
+    required int width,
+    required int height,
+  }) async {
+    try {
+      return await _platform.createSurfaceTexture(
+        width: width,
+        height: height,
+      );
+    } catch (error) {
+      _fallbackLastError = 'createSurfaceTexture failed: $error';
+      return null;
+    }
+  }
+
+  /// Resizes a SurfaceTexture.
+  Future<Map<String, dynamic>?> resizeSurfaceTexture({
+    required int textureId,
+    required int width,
+    required int height,
+  }) async {
+    try {
+      return await _platform.resizeSurfaceTexture(
+        textureId: textureId,
+        width: width,
+        height: height,
+      );
+    } catch (error) {
+      _fallbackLastError = 'resizeSurfaceTexture failed: $error';
+      return null;
+    }
+  }
+
+  /// Disposes a SurfaceTexture.
+  Future<void> disposeSurfaceTexture({required int textureId}) async {
+    try {
+      await _platform.disposeSurfaceTexture(textureId: textureId);
+    } catch (error) {
+      _fallbackLastError = 'disposeSurfaceTexture failed: $error';
+    }
+  }
+
   Future<int> engineRuntimeApiVersion() async {
     final ffi = _ffiBridge;
     if (ffi == null) {
