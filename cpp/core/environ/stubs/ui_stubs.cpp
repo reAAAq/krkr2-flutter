@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 #include <filesystem>
+#include <fstream>
 
 #include "tjsCommHead.h"
 #include "tjsConfig.h"
@@ -598,6 +599,22 @@ const std::string &TVPGetInternalPreferencePath() {
             s_internalPreferencePath = std::string(home) + "/Library/Application Support/krkr2/";
         } else {
             s_internalPreferencePath = "/tmp/krkr2/";
+        }
+#elif defined(__ANDROID__)
+        // On Android, /tmp does not exist. Use the app's private data directory.
+        // Read package name from /proc/self/cmdline to build the path.
+        std::string packageName;
+        {
+            std::ifstream cmdline("/proc/self/cmdline");
+            if (cmdline.is_open()) {
+                std::getline(cmdline, packageName, '\0');
+            }
+        }
+        if (!packageName.empty()) {
+            s_internalPreferencePath = "/data/data/" + packageName + "/files/krkr2/";
+        } else {
+            // Fallback: use a path that Android apps can typically write to
+            s_internalPreferencePath = "/data/local/tmp/krkr2/";
         }
 #else
         s_internalPreferencePath = "/tmp/krkr2/";
