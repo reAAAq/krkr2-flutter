@@ -77,7 +77,7 @@ krkr2/
 | iOS | 🔨 In Progress | Metal | IOSurface |
 | Windows | 📋 Planned | Direct3D 11 | D3D11 Texture |
 | Linux | 📋 Planned | Vulkan / Desktop GL | DMA-BUF |
-| Android | 📋 Planned | OpenGL ES / Vulkan | HardwareBuffer |
+| Android | 🔨 Pipeline Working, Optimizing | OpenGL ES / Vulkan | HardwareBuffer |
 
 ## Engine Performance Optimization
 
