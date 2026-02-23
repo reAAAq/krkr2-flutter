@@ -19,7 +19,7 @@ set -euo pipefail
 # Configuration
 # ============================================================
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$SCRIPT_DIR"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 BUILD_TYPE="${1:-debug}"
 BUILD_TYPE_LOWER="$(echo "$BUILD_TYPE" | tr '[:upper:]' '[:lower:]')"
@@ -184,8 +184,14 @@ install_name_tool -id "@executable_path/../Frameworks/libengine_api.dylib" \
     "$FRAMEWORKS_DIR/libengine_api.dylib" 2>/dev/null || true
 
 # Re-sign the .app bundle (ad-hoc signing for local development)
+# Must specify --entitlements to preserve sandbox permissions (e.g. file picker)
 log_info "Re-signing the .app bundle..."
-codesign --force --deep --sign - "$APP_BUNDLE" 2>/dev/null || {
+if [[ "$FLUTTER_BUILD_MODE" == "release" ]]; then
+    ENTITLEMENTS_FILE="$FLUTTER_APP_DIR/macos/Runner/Release.entitlements"
+else
+    ENTITLEMENTS_FILE="$FLUTTER_APP_DIR/macos/Runner/DebugProfile.entitlements"
+fi
+codesign --force --deep --sign - --entitlements "$ENTITLEMENTS_FILE" "$APP_BUNDLE" 2>/dev/null || {
     log_warn "codesign failed (non-fatal for local development)"
 }
 
