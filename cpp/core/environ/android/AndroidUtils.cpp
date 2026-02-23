@@ -17,6 +17,7 @@
 #include "ConfigManager/LocaleConfigManager.h"
 #include "Platform.h"
 #include <EGL/egl.h>
+#include "krkr_egl_context.h"
 #include <queue>
 #include <unistd.h>
 #include <fcntl.h>
@@ -90,7 +91,14 @@ tjs_int TVPGetSelfUsedMemory() {
 }
 
 void TVPForceSwapBuffer() {
-    eglSwapBuffers(eglGetCurrentDisplay(), eglGetCurrentSurface(EGL_DRAW));
+    // Use the engine's EGL context manager instead of eglGetCurrentDisplay(),
+    // which may return EGL_NO_DISPLAY in headless Pbuffer mode.
+    // Only swap when a WindowSurface is attached (Android SurfaceTexture mode).
+    auto& egl = krkr::GetEngineEGLContext();
+    if (egl.HasNativeWindow()) {
+        eglSwapBuffers(egl.GetDisplay(), egl.GetWindowSurface());
+    }
+    // In Pbuffer mode, swap is a no-op — engine_tick handles readback.
 }
 
 std::string TVPGetDeviceID() {
@@ -446,10 +454,22 @@ std::vector<std::string> TVPGetDriverPath() {
     if(!ret.empty())
         return ret;
 
+    // Flutter mode fallback: prefer app-scoped directories from Context APIs.
+    std::vector<std::string> app_paths = TVPGetAppStoragePath();
+    for(const auto &p : app_paths) {
+        if(!p.empty()) ret.emplace_back(p);
+    }
+    if(!ret.empty()) {
+        return ret;
+    }
+
     char buffer[256] = { 0 };
 
     // enum all mounted storages
     FILE *fp = fopen("/proc/mounts", "r");
+    if(!fp) {
+        return ret;
+    }
     std::set<std::string> mounted;
     while(fgets(buffer, sizeof(buffer), fp)) {
         std::vector<std::string> tabs;
@@ -472,6 +492,7 @@ std::vector<std::string> TVPGetDriverPath() {
             ret.emplace_back(path);
         }
     }
+    fclose(fp);
 
     return ret;
 }
@@ -659,33 +680,44 @@ extern ttstr TVPGetAppPath();
 extern ttstr TVPGetLocallyAccessibleName(const ttstr &name);
 
 std::vector<ttstr> Android_GetExternalStoragePath() {
+    auto to_file_uri = [](const std::string &path) -> std::string {
+        if(path.empty()) return "file:///";
+        if(path[0] == '/') return "file://" + path;
+        return "file:///" + path;
+    };
     static std::vector<ttstr> ret;
     if(ret.empty()) {
         std::vector<std::string> pathlist;
         GetExternalStoragePath(pathlist);
         for(const std::string &path : pathlist) {
-            std::string strPath = "file://.";
-            strPath += path;
-            ret.emplace_back(strPath);
+            ret.emplace_back(to_file_uri(path));
         }
     }
     return ret;
 }
 
 ttstr Android_GetInternalStoragePath() {
+    auto to_file_uri = [](const std::string &path) -> std::string {
+        if(path.empty()) return "file:///";
+        if(path[0] == '/') return "file://" + path;
+        return "file:///" + path;
+    };
     static ttstr strPath;
     if(strPath.IsEmpty()) {
-        strPath = "file://.";
-        strPath += GetInternalStoragePath();
+        strPath = to_file_uri(GetInternalStoragePath());
     }
     return strPath;
 }
 
 ttstr Android_GetApkStoragePath() {
+    auto to_file_uri = [](const std::string &path) -> std::string {
+        if(path.empty()) return "file:///";
+        if(path[0] == '/') return "file://" + path;
+        return "file:///" + path;
+    };
     static ttstr strPath;
     if(strPath.IsEmpty()) {
-        strPath = "file://.";
-        strPath += GetApkStoragePath();
+        strPath = to_file_uri(GetApkStoragePath());
     }
     return strPath;
 }
@@ -964,10 +996,11 @@ void TVPExitApplication(int code) {
                                       "exit", "()V")) {
         t.env->CallStaticVoidMethod(t.classID, t.methodID);
         t.env->DeleteLocalRef(t.classID);
+        return;
     }
-    // In Flutter mode, KR2Activity.exit() is not available.
-    // Just call exit() directly.
-    exit(code);
+    // In Android/Flutter mode, forcing process-wide exit can race with
+    // worker threads and trigger FORTIFY mutex checks.
+    (void)code;
 }
 
 void TVPHideIME() {
