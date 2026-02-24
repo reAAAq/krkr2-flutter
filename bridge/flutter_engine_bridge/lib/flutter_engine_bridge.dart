@@ -11,7 +11,11 @@ export 'src/ffi/engine_bindings.dart'
         kEngineInputEventPointerUp,
         kEngineInputEventTextInput,
         kEnginePixelFormatRgba8888,
-        kEnginePixelFormatUnknown;
+        kEnginePixelFormatUnknown,
+        kEngineStartupStateFailed,
+        kEngineStartupStateIdle,
+        kEngineStartupStateRunning,
+        kEngineStartupStateSucceeded;
 export 'src/ffi/engine_ffi.dart'
     show EngineFrameData, EngineFrameInfo, EngineInputEventData;
 
@@ -75,6 +79,48 @@ class FlutterEngineBridge {
       apiName: 'engine_open_game',
       call: (ffi) => ffi.openGame(gameRootPath, startupScript: startupScript),
     );
+  }
+
+  Future<int> engineOpenGameAsync(
+    String gameRootPath, {
+    String? startupScript,
+  }) async {
+    return _withFfiCall(
+      apiName: 'engine_open_game_async',
+      call: (ffi) =>
+          ffi.openGameAsync(gameRootPath, startupScript: startupScript),
+    );
+  }
+
+  Future<int?> engineGetStartupState() async {
+    final ffi = _ffiBridge;
+    if (ffi == null) {
+      return null;
+    }
+    final state = ffi.getStartupState();
+    if (state == null) {
+      _fallbackLastError = ffi.lastError();
+    } else {
+      _fallbackLastError = '';
+    }
+    return state;
+  }
+
+  Future<String> engineDrainStartupLogs() async {
+    final ffi = _ffiBridge;
+    if (ffi == null) {
+      return '';
+    }
+    final logs = ffi.drainStartupLogs();
+    if (logs.isEmpty) {
+      final err = ffi.lastError();
+      if (err.isNotEmpty) {
+        _fallbackLastError = err;
+      }
+    } else {
+      _fallbackLastError = '';
+    }
+    return logs;
   }
 
   Future<int> engineTick({int deltaMs = 16}) async {
@@ -304,10 +350,7 @@ class FlutterEngineBridge {
     required int height,
   }) async {
     try {
-      return await _platform.createSurfaceTexture(
-        width: width,
-        height: height,
-      );
+      return await _platform.createSurfaceTexture(width: width, height: height);
     } catch (error) {
       _fallbackLastError = 'createSurfaceTexture failed: $error';
       return null;

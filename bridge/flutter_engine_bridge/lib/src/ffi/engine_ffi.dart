@@ -164,6 +164,63 @@ class EngineFfiBridge {
     }
   }
 
+  int openGameAsync(String gameRootPath, {String? startupScript}) {
+    final gameRootPtr = gameRootPath.toNativeUtf8();
+    final startupScriptPtr = startupScript == null
+        ? nullptr.cast<Utf8>()
+        : startupScript.toNativeUtf8();
+    try {
+      return _bindings.engineOpenGameAsync(
+        _handle,
+        gameRootPtr,
+        startupScriptPtr,
+      );
+    } finally {
+      calloc.free(gameRootPtr);
+      if (startupScriptPtr != nullptr) {
+        calloc.free(startupScriptPtr);
+      }
+    }
+  }
+
+  int? getStartupState() {
+    final outState = calloc<Uint32>();
+    try {
+      final result = _bindings.engineGetStartupState(_handle, outState);
+      if (result != kEngineResultOk) {
+        return null;
+      }
+      return outState.value;
+    } finally {
+      calloc.free(outState);
+    }
+  }
+
+  String drainStartupLogs() {
+    const int bufferSize = 8192;
+    final buffer = calloc<Uint8>(bufferSize);
+    final outBytesWritten = calloc<Uint32>();
+    try {
+      final result = _bindings.engineDrainStartupLogs(
+        _handle,
+        buffer.cast<Utf8>(),
+        bufferSize,
+        outBytesWritten,
+      );
+      if (result != kEngineResultOk) {
+        return '';
+      }
+      final length = outBytesWritten.value;
+      if (length == 0) {
+        return '';
+      }
+      return String.fromCharCodes(buffer.asTypedList(length));
+    } finally {
+      calloc.free(outBytesWritten);
+      calloc.free(buffer);
+    }
+  }
+
   int tick({int deltaMs = 16}) {
     return _bindings.engineTick(_handle, deltaMs);
   }
@@ -315,20 +372,23 @@ class EngineFfiBridge {
     required int height,
   }) {
     return _bindings.engineSetRenderTargetIOSurface(
-      _handle, iosurfaceId, width, height,
+      _handle,
+      iosurfaceId,
+      width,
+      height,
     );
   }
 
   /// Android: set render target surface.
   /// On Android, the surface is set via JNI (nativeSetSurface) from the
   /// Kotlin plugin. This FFI call is used to explicitly detach (pass nullptr).
-  int setRenderTargetSurface({
-    required int width,
-    required int height,
-  }) {
+  int setRenderTargetSurface({required int width, required int height}) {
     // Pass nullptr to detach the surface render target
     return _bindings.engineSetRenderTargetSurface(
-      _handle, nullptr, width, height,
+      _handle,
+      nullptr,
+      width,
+      height,
     );
   }
 

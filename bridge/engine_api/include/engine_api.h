@@ -86,6 +86,13 @@ typedef enum engine_input_event_type_t {
   ENGINE_INPUT_EVENT_BACK = 8
 } engine_input_event_type_t;
 
+typedef enum engine_startup_state_t {
+  ENGINE_STARTUP_STATE_IDLE = 0,
+  ENGINE_STARTUP_STATE_RUNNING = 1,
+  ENGINE_STARTUP_STATE_SUCCEEDED = 2,
+  ENGINE_STARTUP_STATE_FAILED = 3
+} engine_startup_state_t;
+
 typedef struct engine_input_event_t {
   uint32_t struct_size;
   uint32_t type;
@@ -133,6 +140,30 @@ ENGINE_API_EXPORT engine_result_t engine_destroy(engine_handle_t handle);
 ENGINE_API_EXPORT engine_result_t engine_open_game(
     engine_handle_t handle, const char* game_root_path_utf8,
     const char* startup_script_utf8);
+
+/*
+ * Starts game opening asynchronously on a background worker.
+ * Returns immediately when the startup task is scheduled.
+ */
+ENGINE_API_EXPORT engine_result_t engine_open_game_async(
+    engine_handle_t handle, const char* game_root_path_utf8,
+    const char* startup_script_utf8);
+
+/*
+ * Gets async startup state.
+ * out_state must be non-null.
+ */
+ENGINE_API_EXPORT engine_result_t engine_get_startup_state(
+    engine_handle_t handle, uint32_t* out_state);
+
+/*
+ * Drains startup logs into caller buffer as UTF-8 text.
+ * Each log line is terminated by '\n'.
+ * Returns bytes written in out_bytes_written.
+ */
+ENGINE_API_EXPORT engine_result_t engine_drain_startup_logs(
+    engine_handle_t handle, char* out_buffer, uint32_t buffer_size,
+    uint32_t* out_bytes_written);
 
 /*
  * Ticks engine main loop once.

@@ -46,6 +46,39 @@ class FlutterEngineBridgeAdapter implements EngineBridge {
   }
 
   @override
+  Future<int> engineOpenGameAsync(
+    String gameRootPath, {
+    String? startupScript,
+  }) {
+    return _delegate.engineOpenGameAsync(
+      gameRootPath,
+      startupScript: startupScript,
+    );
+  }
+
+  @override
+  Future<EngineStartupState?> engineGetStartupState() async {
+    final int? state = await _delegate.engineGetStartupState();
+    switch (state) {
+      case plugin_bridge.kEngineStartupStateIdle:
+        return EngineStartupState.idle;
+      case plugin_bridge.kEngineStartupStateRunning:
+        return EngineStartupState.running;
+      case plugin_bridge.kEngineStartupStateSucceeded:
+        return EngineStartupState.succeeded;
+      case plugin_bridge.kEngineStartupStateFailed:
+        return EngineStartupState.failed;
+      default:
+        return null;
+    }
+  }
+
+  @override
+  Future<String> engineDrainStartupLogs() {
+    return _delegate.engineDrainStartupLogs();
+  }
+
+  @override
   Future<int> engineTick({int deltaMs = 16}) {
     return _delegate.engineTick(deltaMs: deltaMs);
   }

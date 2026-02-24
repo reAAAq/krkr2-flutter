@@ -7,6 +7,10 @@ const int kEngineApiVersion = 0x01000000;
 const int kEngineResultOk = 0;
 const int kEngineResultInvalidArgument = -1;
 const int kEngineResultNotSupported = -3;
+const int kEngineStartupStateIdle = 0;
+const int kEngineStartupStateRunning = 1;
+const int kEngineStartupStateSucceeded = 2;
+const int kEngineStartupStateFailed = 3;
 const int kEnginePixelFormatUnknown = 0;
 const int kEnginePixelFormatRgba8888 = 1;
 
@@ -164,6 +168,18 @@ typedef _EngineOpenGameNative =
     Int32 Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
 typedef _EngineOpenGameDart =
     int Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
+typedef _EngineOpenGameAsyncNative =
+    Int32 Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
+typedef _EngineOpenGameAsyncDart =
+    int Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>);
+typedef _EngineGetStartupStateNative =
+    Int32 Function(Pointer<Void>, Pointer<Uint32>);
+typedef _EngineGetStartupStateDart =
+    int Function(Pointer<Void>, Pointer<Uint32>);
+typedef _EngineDrainStartupLogsNative =
+    Int32 Function(Pointer<Void>, Pointer<Utf8>, Uint32, Pointer<Uint32>);
+typedef _EngineDrainStartupLogsDart =
+    int Function(Pointer<Void>, Pointer<Utf8>, int, Pointer<Uint32>);
 
 typedef _EngineTickNative = Int32 Function(Pointer<Void>, Uint32);
 typedef _EngineTickDart = int Function(Pointer<Void>, int);
@@ -240,6 +256,20 @@ class EngineBindings {
           .lookupFunction<_EngineOpenGameNative, _EngineOpenGameDart>(
             'engine_open_game',
           ),
+      engineOpenGameAsync = library
+          .lookupFunction<_EngineOpenGameAsyncNative, _EngineOpenGameAsyncDart>(
+            'engine_open_game_async',
+          ),
+      engineGetStartupState = library
+          .lookupFunction<
+            _EngineGetStartupStateNative,
+            _EngineGetStartupStateDart
+          >('engine_get_startup_state'),
+      engineDrainStartupLogs = library
+          .lookupFunction<
+            _EngineDrainStartupLogsNative,
+            _EngineDrainStartupLogsDart
+          >('engine_drain_startup_logs'),
       engineTick = library.lookupFunction<_EngineTickNative, _EngineTickDart>(
         'engine_tick',
       ),
@@ -301,6 +331,11 @@ class EngineBindings {
   final int Function(Pointer<Void>) engineDestroy;
   final int Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>)
   engineOpenGame;
+  final int Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>)
+  engineOpenGameAsync;
+  final int Function(Pointer<Void>, Pointer<Uint32>) engineGetStartupState;
+  final int Function(Pointer<Void>, Pointer<Utf8>, int, Pointer<Uint32>)
+  engineDrainStartupLogs;
   final int Function(Pointer<Void>, int) engineTick;
   final int Function(Pointer<Void>) enginePause;
   final int Function(Pointer<Void>) engineResume;
@@ -314,10 +349,8 @@ class EngineBindings {
   engineSetRenderTargetIOSurface;
   final int Function(Pointer<Void>, Pointer<Void>, int, int)
   engineSetRenderTargetSurface;
-  final int Function(Pointer<Void>, Pointer<Uint32>)
-  engineGetFrameRenderedFlag;
-  final int Function(Pointer<Void>, Pointer<Utf8>, int)
-  engineGetRendererInfo;
+  final int Function(Pointer<Void>, Pointer<Uint32>) engineGetFrameRenderedFlag;
+  final int Function(Pointer<Void>, Pointer<Utf8>, int) engineGetRendererInfo;
   final Pointer<Utf8> Function(Pointer<Void>) engineGetLastError;
 
   static String _lastLoadError = '';

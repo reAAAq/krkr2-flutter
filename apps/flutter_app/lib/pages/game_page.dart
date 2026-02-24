@@ -29,11 +29,11 @@ class GamePage extends StatefulWidget {
   State<GamePage> createState() => _GamePageState();
 }
 
-class _GamePageState extends State<GamePage>
-    with WidgetsBindingObserver {
+class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
   static const int _engineResultOk = 0;
-  static const MethodChannel _platformChannel =
-      MethodChannel('flutter_engine_bridge');
+  static const MethodChannel _platformChannel = MethodChannel(
+    'flutter_engine_bridge',
+  );
 
   late EngineBridge _bridge;
   final GlobalKey<EngineSurfaceState> _surfaceKey =
@@ -45,6 +45,7 @@ class _GamePageState extends State<GamePage>
   bool _autoPausedByLifecycle = false;
   bool _resumeTickAfterLifecycle = false;
   bool _lifecycleTransitionInFlight = false;
+
   /// When true, a resume was requested while a pause transition was
   /// still in flight. The pause handler checks this on completion and
   /// triggers a resume automatically.
@@ -71,6 +72,8 @@ class _GamePageState extends State<GamePage>
 
   // ScrollController for boot log auto-scroll
   final ScrollController _bootLogScrollController = ScrollController();
+  Timer? _startupPollTimer;
+  bool _startupPollInFlight = false;
 
   @override
   void initState() {
@@ -93,6 +96,7 @@ class _GamePageState extends State<GamePage>
 
   @override
   void dispose() {
+    _stopStartupPolling();
     _bootLogScrollController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _stopTickLoop(notify: false);
@@ -150,7 +154,9 @@ class _GamePageState extends State<GamePage>
   Future<String> _adjustGamePathForAndroid(String path) async {
     if (!Platform.isAndroid) return path;
 
-    final clean = path.endsWith('/') ? path.substring(0, path.length - 1) : path;
+    final clean = path.endsWith('/')
+        ? path.substring(0, path.length - 1)
+        : path;
 
     // If the current directory already has startup.tjs, it IS the game
     // root (or at least a valid project dir). Do NOT adjust.
@@ -227,8 +233,10 @@ class _GamePageState extends State<GamePage>
     if (Platform.isAndroid) {
       final granted = await _ensureAndroidAllFilesAccess();
       if (!granted) {
-        _fail('All files access is required on Android. '
-            'Please grant permission and open the game again.');
+        _fail(
+          'All files access is required on Android. '
+          'Please grant permission and open the game again.',
+        );
         return;
       }
     }
@@ -242,27 +250,38 @@ class _GamePageState extends State<GamePage>
 
     final int createResult = await _bridge.engineCreate();
     if (createResult != _engineResultOk) {
-      _fail('engine_create failed: result=$createResult, '
-          'error=${_bridge.engineGetLastError()}');
+      _fail(
+        'engine_create failed: result=$createResult, '
+        'error=${_bridge.engineGetLastError()}',
+      );
       return;
     }
     _log('engine_create => OK');
 
     // Set renderer pipeline (opengl / software) before opening the game
     final prefs = await SharedPreferences.getInstance();
-    final renderer = prefs.getString(PrefsKeys.renderer) ?? PrefsKeys.rendererOpengl;
+    final renderer =
+        prefs.getString(PrefsKeys.renderer) ?? PrefsKeys.rendererOpengl;
     _log('Setting renderer=$renderer');
-    await _bridge.engineSetOption(key: PrefsKeys.optionRenderer, value: renderer);
+    await _bridge.engineSetOption(
+      key: PrefsKeys.optionRenderer,
+      value: renderer,
+    );
 
     // Set ANGLE backend (gles / vulkan) — Android only, others ignore
     if (Platform.isAndroid) {
-      final angleBackend = prefs.getString(PrefsKeys.angleBackend) ?? PrefsKeys.angleBackendGles;
+      final angleBackend =
+          prefs.getString(PrefsKeys.angleBackend) ?? PrefsKeys.angleBackendGles;
       _log('Setting angle_backend=$angleBackend');
-      await _bridge.engineSetOption(key: PrefsKeys.optionAngleBackend, value: angleBackend);
+      await _bridge.engineSetOption(
+        key: PrefsKeys.optionAngleBackend,
+        value: angleBackend,
+      );
     }
 
     if (!mounted) return;
     setState(() => _phase = _EnginePhase.opening);
+    _stopStartupPolling();
     var normalizedGamePath = _normalizeGamePath(widget.gamePath);
     // On Android, auto-detect if the user selected the data/ folder
     // itself and step up to the real game root.
@@ -276,37 +295,35 @@ class _GamePageState extends State<GamePage>
       return;
     }
 
-    // Yield again so the "Opening game..." log line is painted before
-    // the heavy engine_open_game call blocks the thread.
+    // Yield once so opening logs are painted before the async start call.
     await Future<void>.delayed(Duration.zero);
 
-    final int openResult = await _bridge.engineOpenGame(normalizedGamePath);
+    final int openResult = await _bridge.engineOpenGameAsync(
+      normalizedGamePath,
+    );
     if (openResult != _engineResultOk) {
-      _fail('engine_open_game failed: result=$openResult, '
-          'error=${_bridge.engineGetLastError()}');
+      _fail(
+        'engine_open_game_async failed: result=$openResult, '
+        'error=${_bridge.engineGetLastError()}',
+      );
       return;
     }
-    _log('engine_open_game => OK');
-
-    // Apply frame rate limit setting to the C++ engine layer
-    await _applyFpsLimit();
-
-    if (!mounted) return;
-    setState(() => _phase = _EnginePhase.running);
-    _fetchRendererInfo();
-    _startTickLoop();
+    _log('engine_open_game_async => queued');
+    _startStartupPolling();
   }
 
   Future<bool> _ensureAndroidAllFilesAccess() async {
     try {
-      final has = await _platformChannel.invokeMethod<bool>(
+      final has =
+          await _platformChannel.invokeMethod<bool>(
             'hasManageExternalStorage',
           ) ??
           false;
       if (has) return true;
       _log('Requesting Android all-files access permission...');
       await _platformChannel.invokeMethod<bool>('requestManageExternalStorage');
-      final hasAfter = await _platformChannel.invokeMethod<bool>(
+      final hasAfter =
+          await _platformChannel.invokeMethod<bool>(
             'hasManageExternalStorage',
           ) ??
           false;
@@ -318,6 +335,7 @@ class _GamePageState extends State<GamePage>
   }
 
   void _fail(String message) {
+    _stopStartupPolling();
     _log('ERROR: $message');
     if (!mounted) return;
     setState(() {
@@ -368,17 +386,20 @@ class _GamePageState extends State<GamePage>
         // Read the rendered flag exactly once. We pass it to pollFrame()
         // so that engine_surface does NOT read it a second time (which
         // would always see false because the flag is reset on read).
-        final bool rendered =
-            await _bridge.engineGetFrameRenderedFlag();
+        final bool rendered = await _bridge.engineGetFrameRenderedFlag();
         if (rendered) {
+          if (_rendererInfo.isEmpty) {
+            _fetchRendererInfo();
+          }
           // Compute the real inter-render interval for accurate FPS.
           final int renderDeltaMs = _lastRenderedElapsed == Duration.zero
               ? deltaMs
               : (elapsed - _lastRenderedElapsed).inMilliseconds.clamp(1, 200);
           _lastRenderedElapsed = elapsed;
 
-          _perfOverlayKey0.currentState
-              ?.reportFrameDelta(renderDeltaMs.toDouble());
+          _perfOverlayKey0.currentState?.reportFrameDelta(
+            renderDeltaMs.toDouble(),
+          );
           // Poll frame immediately after tick, passing the flag so
           // engine_surface skips its own flag read.
           await _surfaceKey.currentState?.pollFrame(rendered: true);
@@ -403,6 +424,69 @@ class _GamePageState extends State<GamePage>
     _isTicking = false;
     if (notify && mounted) {
       setState(() {});
+    }
+  }
+
+  void _startStartupPolling() {
+    _stopStartupPolling();
+    _startupPollTimer = Timer.periodic(const Duration(milliseconds: 100), (
+      _,
+    ) async {
+      if (!mounted || _phase != _EnginePhase.opening) {
+        _stopStartupPolling();
+        return;
+      }
+      if (_startupPollInFlight) {
+        return;
+      }
+      _startupPollInFlight = true;
+      try {
+        await _drainStartupLogs();
+        final state = await _bridge.engineGetStartupState();
+        if (!mounted || state == null) {
+          return;
+        }
+        switch (state) {
+          case EngineStartupState.idle:
+          case EngineStartupState.running:
+            return;
+          case EngineStartupState.succeeded:
+            _stopStartupPolling();
+            _log('engine_open_game => OK');
+            await _applyFpsLimit();
+            if (!mounted) return;
+            setState(() => _phase = _EnginePhase.running);
+            _startTickLoop();
+            return;
+          case EngineStartupState.failed:
+            _stopStartupPolling();
+            _fail(
+              'engine_open_game failed: error=${_bridge.engineGetLastError()}',
+            );
+            return;
+        }
+      } finally {
+        _startupPollInFlight = false;
+      }
+    });
+  }
+
+  void _stopStartupPolling() {
+    _startupPollTimer?.cancel();
+    _startupPollTimer = null;
+  }
+
+  Future<void> _drainStartupLogs() async {
+    final raw = await _bridge.engineDrainStartupLogs();
+    if (raw.isEmpty) {
+      return;
+    }
+    final lines = raw.split('\n');
+    for (final line in lines) {
+      final trimmed = line.trim();
+      if (trimmed.isNotEmpty) {
+        _log(trimmed);
+      }
     }
   }
 
@@ -491,7 +575,9 @@ class _GamePageState extends State<GamePage>
   /// engine renders every vsync. When enabled, sends the target FPS value.
   Future<void> _applyFpsLimit() async {
     final int fpsValue = _fpsLimitEnabled ? _targetFps : 0;
-    _log('Setting fps_limit=$fpsValue (enabled=$_fpsLimitEnabled, target=$_targetFps)');
+    _log(
+      'Setting fps_limit=$fpsValue (enabled=$_fpsLimitEnabled, target=$_targetFps)',
+    );
     await _bridge.engineSetOption(
       key: PrefsKeys.optionFpsLimit,
       value: fpsValue.toString(),
@@ -552,16 +638,16 @@ class _GamePageState extends State<GamePage>
             child: _phase == _EnginePhase.error
                 ? _buildErrorView()
                 : _phase == _EnginePhase.running
-                    ? EngineSurface(
-                        key: _surfaceKey,
-                        bridge: _bridge,
-                        active: surfaceActive,
-                        surfaceMode: EngineSurfaceMode.gpuZeroCopy,
-                        externalTickDriven: _isTicking,
-                        onLog: (msg) => _log('surface: $msg'),
-                        onError: (msg) => _log('surface error: $msg'),
-                      )
-                    : _buildBootLogView(),
+                ? EngineSurface(
+                    key: _surfaceKey,
+                    bridge: _bridge,
+                    active: surfaceActive,
+                    surfaceMode: EngineSurfaceMode.gpuZeroCopy,
+                    externalTickDriven: _isTicking,
+                    onLog: (msg) => _log('surface: $msg'),
+                    onError: (msg) => _log('surface error: $msg'),
+                  )
+                : _buildBootLogView(),
           ),
 
           // Performance overlay (top-left)
@@ -647,9 +733,7 @@ class _GamePageState extends State<GamePage>
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: const BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(color: Colors.white10),
-                ),
+                border: Border(bottom: BorderSide(color: Colors.white10)),
               ),
               child: Row(
                 children: [
@@ -729,8 +813,8 @@ class _GamePageState extends State<GamePage>
                               color: isError
                                   ? Colors.redAccent
                                   : isOk
-                                      ? Colors.greenAccent
-                                      : Colors.white.withValues(alpha: 0.6),
+                                  ? Colors.greenAccent
+                                  : Colors.white.withValues(alpha: 0.6),
                               fontSize: 12,
                               fontFamily: 'monospace',
                               height: 1.4,
@@ -744,9 +828,7 @@ class _GamePageState extends State<GamePage>
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               decoration: const BoxDecoration(
-                border: Border(
-                  top: BorderSide(color: Colors.white10),
-                ),
+                border: Border(top: BorderSide(color: Colors.white10)),
               ),
               child: Row(
                 children: [
@@ -1015,10 +1097,4 @@ class _GamePageState extends State<GamePage>
   }
 }
 
-enum _EnginePhase {
-  initializing,
-  creating,
-  opening,
-  running,
-  error,
-}
+enum _EnginePhase { initializing, creating, opening, running, error }

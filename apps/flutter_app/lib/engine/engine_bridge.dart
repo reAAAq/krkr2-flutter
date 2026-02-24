@@ -51,6 +51,8 @@ class EngineInputEventData {
   final int unicodeCodepoint;
 }
 
+enum EngineStartupState { idle, running, succeeded, failed }
+
 abstract interface class EngineBridge {
   bool get isFfiAvailable;
   String get ffiInitializationError;
@@ -61,6 +63,9 @@ abstract interface class EngineBridge {
   Future<int> engineCreate({String? writablePath, String? cachePath});
   Future<int> engineDestroy();
   Future<int> engineOpenGame(String gameRootPath, {String? startupScript});
+  Future<int> engineOpenGameAsync(String gameRootPath, {String? startupScript});
+  Future<EngineStartupState?> engineGetStartupState();
+  Future<String> engineDrainStartupLogs();
   Future<int> engineTick({int deltaMs = 16});
   Future<int> enginePause();
   Future<int> engineResume();

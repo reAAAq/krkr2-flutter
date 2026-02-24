@@ -89,6 +89,14 @@ struct engine_handle_s {
     bool iosurface_attached = false;
     bool native_window_attached = false;
   } render;
+
+  struct StartupState {
+    std::mutex mutex;
+    uint32_t state = ENGINE_STARTUP_STATE_IDLE;
+    std::deque<std::string> logs;
+    std::thread worker;
+    bool worker_running = false;
+  } startup;
 };
 
 namespace {
@@ -120,6 +128,8 @@ engine_handle_t g_runtime_owner = nullptr;
 bool g_runtime_active = false;
 bool g_runtime_started_once = false;
 bool g_engine_bootstrapped = false;
+bool g_runtime_startup_active = false;
+engine_handle_t g_runtime_startup_owner = nullptr;
 std::once_flag g_loggers_init_once;
 
 std::shared_ptr<spdlog::logger> EnsureNamedLogger(const char* name) {
@@ -224,6 +234,44 @@ engine_result_t ValidateHandleThreadLocked(engine_handle_s* impl) {
 
 void ClearHandleErrorLocked(engine_handle_s* impl) {
   impl->last_error.clear();
+}
+
+void PushStartupLog(engine_handle_s* impl, const std::string& message) {
+  std::lock_guard<std::mutex> guard(impl->startup.mutex);
+  impl->startup.logs.push_back(message);
+  constexpr size_t kMaxStartupLogs = 200;
+  while (impl->startup.logs.size() > kMaxStartupLogs) {
+    impl->startup.logs.pop_front();
+  }
+}
+
+void SetStartupState(engine_handle_s* impl, uint32_t state) {
+  std::lock_guard<std::mutex> guard(impl->startup.mutex);
+  impl->startup.state = state;
+}
+
+uint32_t GetStartupState(engine_handle_s* impl) {
+  std::lock_guard<std::mutex> guard(impl->startup.mutex);
+  return impl->startup.state;
+}
+
+void ResetStartupState(engine_handle_s* impl) {
+  std::lock_guard<std::mutex> guard(impl->startup.mutex);
+  impl->startup.state = ENGINE_STARTUP_STATE_IDLE;
+  impl->startup.logs.clear();
+}
+
+void MarkStartupWorkerRunning(engine_handle_s* impl, bool running) {
+  std::lock_guard<std::mutex> guard(impl->startup.mutex);
+  impl->startup.worker_running = running;
+}
+
+std::thread DetachStartupWorker(engine_handle_s* impl) {
+  std::lock_guard<std::mutex> guard(impl->startup.mutex);
+  if (!impl->startup.worker.joinable()) {
+    return std::thread();
+  }
+  return std::move(impl->startup.worker);
 }
 
 bool EnsureEngineRuntimeInitialized(uint32_t width, uint32_t height,
@@ -356,6 +404,155 @@ engine_result_t DispatchInputEventNow(engine_handle_s* impl,
   return ENGINE_RESULT_OK;
 }
 
+engine_result_t OpenGameCore(engine_handle_t handle,
+                             engine_handle_s* impl,
+                             const char* game_root_path_utf8) {
+  if (game_root_path_utf8 == nullptr || game_root_path_utf8[0] == '\0') {
+    return ENGINE_RESULT_INVALID_ARGUMENT;
+  }
+
+  if (!EnsureEngineRuntimeInitialized(impl->frame.surface_width,
+                                      impl->frame.surface_height,
+                                      impl->render.angle_backend)) {
+    std::lock_guard<std::recursive_mutex> guard(impl->mutex);
+    SetHandleErrorLocked(impl, "failed to initialize engine runtime for host mode");
+    return ENGINE_RESULT_INTERNAL_ERROR;
+  }
+
+  EnsureRuntimeLoggersInitialized();
+
+  std::string normalized_game_root_path(game_root_path_utf8);
+  if (!normalized_game_root_path.empty() &&
+      normalized_game_root_path.back() != '/' &&
+      normalized_game_root_path.back() != '\\') {
+    normalized_game_root_path.push_back('/');
+  }
+
+  spdlog::info(
+      "engine_open_game: runtime initialized, starting application with path: {} (normalized: {})",
+      game_root_path_utf8, normalized_game_root_path);
+#if defined(__ANDROID__)
+  AndroidInfoLog("engine_open_game: input='%s' normalized='%s'",
+                 game_root_path_utf8, normalized_game_root_path.c_str());
+#endif
+  spdlog::default_logger()->flush();
+
+  try {
+    spdlog::debug("engine_open_game: calling Application->StartApplication...");
+#if defined(__ANDROID__)
+    AndroidInfoLog("engine_open_game: calling StartApplication('%s')",
+                   normalized_game_root_path.c_str());
+#endif
+    spdlog::default_logger()->flush();
+    Application->StartApplication(ttstr(normalized_game_root_path.c_str()));
+    spdlog::info("engine_open_game: StartApplication returned successfully");
+#if defined(__ANDROID__)
+    AndroidInfoLog("engine_open_game: StartApplication returned successfully");
+#endif
+  } catch (const std::exception& e) {
+    spdlog::error("engine_open_game: StartApplication threw std::exception: {}",
+                  e.what());
+    std::lock_guard<std::recursive_mutex> guard(impl->mutex);
+    SetHandleErrorLocked(impl, "StartApplication threw an exception");
+    return ENGINE_RESULT_INTERNAL_ERROR;
+  } catch (...) {
+    spdlog::error("engine_open_game: StartApplication threw unknown exception");
+    std::lock_guard<std::recursive_mutex> guard(impl->mutex);
+    SetHandleErrorLocked(impl, "StartApplication threw an exception");
+    return ENGINE_RESULT_INTERNAL_ERROR;
+  }
+
+  if (TVPTerminated) {
+    std::lock_guard<std::recursive_mutex> guard(impl->mutex);
+    SetHandleErrorLocked(impl, "runtime requested termination during startup");
+    return ENGINE_RESULT_INVALID_STATE;
+  }
+
+  EngineLoop::CreateInstance();
+  if (auto* loop = EngineLoop::GetInstance(); loop != nullptr) {
+    loop->Start();
+  }
+
+  if (auto* scene = TVPMainScene::GetInstance(); scene != nullptr) {
+    scene->scheduleUpdate();
+  }
+
+  std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
+  if (!IsHandleLiveLocked(handle)) {
+    return ENGINE_RESULT_INVALID_STATE;
+  }
+
+  std::lock_guard<std::recursive_mutex> guard(impl->mutex);
+  if (impl->state == ToStateValue(EngineState::kDestroyed)) {
+    return ENGINE_RESULT_INVALID_STATE;
+  }
+
+  if (g_runtime_startup_active && g_runtime_startup_owner == handle) {
+    g_runtime_startup_active = false;
+    g_runtime_startup_owner = nullptr;
+  }
+  g_runtime_active = true;
+  g_runtime_owner = handle;
+  g_runtime_started_once = true;
+
+  impl->runtime_owner = true;
+  impl->input.native_mouse_callbacks_disabled = true;
+  impl->frame.width = 0;
+  impl->frame.height = 0;
+  impl->frame.stride_bytes = 0;
+  impl->frame.rgba.clear();
+  impl->frame.ready = false;
+  impl->input.active_pointer_ids.clear();
+  impl->input.pending_events.clear();
+  impl->state = ToStateValue(EngineState::kOpened);
+  ClearHandleErrorLocked(impl);
+  return ENGINE_RESULT_OK;
+}
+
+void RunOpenGameAsync(engine_handle_t handle,
+                      engine_handle_s* impl,
+                      std::string game_root_path_utf8) {
+  PushStartupLog(impl, "engine_open_game_async: worker started");
+  TVPTerminated = false;
+  TVPTerminateCode = 0;
+  TVPSystemUninitCalled = false;
+  TVPTerminateOnWindowClose = false;
+  TVPTerminateOnNoWindowStartup = false;
+  TVPHostSuppressProcessExit = true;
+
+  const engine_result_t open_result =
+      OpenGameCore(handle, impl, game_root_path_utf8.c_str());
+
+  // Startup runs on a worker thread; release current GL context here so the
+  // owner thread can safely make it current before ticking/rendering.
+  auto& egl = krkr::GetEngineEGLContext();
+  if (egl.IsValid()) {
+    egl.ReleaseCurrent();
+  }
+
+  if (open_result == ENGINE_RESULT_OK) {
+    PushStartupLog(impl, "engine_open_game => OK");
+    SetStartupState(impl, ENGINE_STARTUP_STATE_SUCCEEDED);
+  } else {
+    std::string error_text;
+    {
+      std::lock_guard<std::recursive_mutex> guard(impl->mutex);
+      error_text = impl->last_error;
+    }
+    if (error_text.empty()) {
+      error_text = "unknown startup error";
+    }
+    PushStartupLog(impl, "ERROR: " + error_text);
+    SetStartupState(impl, ENGINE_STARTUP_STATE_FAILED);
+    std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
+    if (g_runtime_startup_active && g_runtime_startup_owner == handle) {
+      g_runtime_startup_active = false;
+      g_runtime_startup_owner = nullptr;
+    }
+  }
+  MarkStartupWorkerRunning(impl, false);
+}
+
 }  // namespace
 
 extern "C" {
@@ -422,6 +619,7 @@ engine_result_t engine_destroy(engine_handle_t handle) {
 
   engine_handle_s* impl = nullptr;
   bool owned_runtime = false;
+  std::thread startup_worker;
 
   {
     std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
@@ -442,10 +640,20 @@ engine_result_t engine_destroy(engine_handle_t handle) {
       g_runtime_owner = nullptr;
       impl->runtime_owner = false;
     }
+    if (g_runtime_startup_active && g_runtime_startup_owner == handle) {
+      g_runtime_startup_active = false;
+      g_runtime_startup_owner = nullptr;
+    }
+    startup_worker = DetachStartupWorker(impl);
+    SetStartupState(impl, ENGINE_STARTUP_STATE_IDLE);
 
     impl->state = ToStateValue(EngineState::kDestroyed);
     ClearHandleErrorLocked(impl);
     g_live_handles.erase(handle);
+  }
+
+  if (startup_worker.joinable()) {
+    startup_worker.join();
   }
 
   if (owned_runtime) {
@@ -495,6 +703,10 @@ engine_result_t engine_open_game(engine_handle_t handle,
     return SetHandleErrorAndReturnLocked(impl, ENGINE_RESULT_INVALID_STATE,
                                          "engine is already destroyed");
   }
+  if (g_runtime_startup_active && g_runtime_startup_owner == handle) {
+    return SetHandleErrorAndReturnLocked(
+        impl, ENGINE_RESULT_INVALID_STATE, "engine startup is already running");
+  }
 
   if (g_runtime_active) {
     if (g_runtime_owner != handle) {
@@ -516,97 +728,197 @@ engine_result_t engine_open_game(engine_handle_t handle,
         ENGINE_RESULT_NOT_SUPPORTED,
         "runtime restart is not supported yet; restart process to open another game");
   }
-
   TVPTerminated = false;
   TVPTerminateCode = 0;
   TVPSystemUninitCalled = false;
   TVPTerminateOnWindowClose = false;
   TVPTerminateOnNoWindowStartup = false;
   TVPHostSuppressProcessExit = true;
+  g_runtime_startup_active = true;
+  g_runtime_startup_owner = handle;
+  ResetStartupState(impl);
+  SetStartupState(impl, ENGINE_STARTUP_STATE_RUNNING);
+  PushStartupLog(impl, "engine_open_game: starting");
+  ClearHandleErrorLocked(impl);
 
-  if (!EnsureEngineRuntimeInitialized(impl->frame.surface_width, impl->frame.surface_height, impl->render.angle_backend)) {
-    return SetHandleErrorAndReturnLocked(
-        impl,
-        ENGINE_RESULT_INTERNAL_ERROR,
-        "failed to initialize engine runtime for host mode");
+  const engine_result_t open_result =
+      OpenGameCore(handle, impl, game_root_path_utf8);
+  if (open_result == ENGINE_RESULT_OK) {
+    SetStartupState(impl, ENGINE_STARTUP_STATE_SUCCEEDED);
+    PushStartupLog(impl, "engine_open_game => OK");
+    SetThreadError(nullptr);
+    return ENGINE_RESULT_OK;
   }
 
-  // Initialize loggers early so signal handlers and flush-on-debug are active
-  EnsureRuntimeLoggersInitialized();
+  if (open_result == ENGINE_RESULT_INTERNAL_ERROR) {
+    SetHandleErrorLocked(impl, "StartApplication threw an exception");
+  } else if (open_result == ENGINE_RESULT_INVALID_STATE && TVPTerminated) {
+    SetHandleErrorLocked(impl, "runtime requested termination during startup");
+  } else {
+    SetHandleErrorLocked(impl, "engine_open_game failed");
+  }
+  g_runtime_startup_active = false;
+  g_runtime_startup_owner = nullptr;
+  SetStartupState(impl, ENGINE_STARTUP_STATE_FAILED);
+  PushStartupLog(impl, std::string("ERROR: ") + impl->last_error);
+  return open_result;
+}
 
-  std::string normalized_game_root_path(game_root_path_utf8);
-  if (!normalized_game_root_path.empty() &&
-      normalized_game_root_path.back() != '/' &&
-      normalized_game_root_path.back() != '\\') {
-    normalized_game_root_path.push_back('/');
+engine_result_t engine_open_game_async(engine_handle_t handle,
+                                       const char* game_root_path_utf8,
+                                       const char* startup_script_utf8) {
+  (void)startup_script_utf8;
+
+  if (game_root_path_utf8 == nullptr || game_root_path_utf8[0] == '\0') {
+    return SetThreadErrorAndReturn(ENGINE_RESULT_INVALID_ARGUMENT,
+                                   "game_root_path_utf8 is null or empty");
   }
 
-  spdlog::info("engine_open_game: runtime initialized, starting application with path: {} (normalized: {})",
-               game_root_path_utf8, normalized_game_root_path);
-#if defined(__ANDROID__)
-  AndroidInfoLog("engine_open_game: input='%s' normalized='%s'",
-                 game_root_path_utf8, normalized_game_root_path.c_str());
-#endif
-  spdlog::default_logger()->flush();
+  std::thread stale_worker;
+  std::string game_root_copy(game_root_path_utf8);
+  engine_handle_s* impl = nullptr;
+  {
+    std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
+    auto result = ValidateHandleLocked(handle, &impl);
+    if (result != ENGINE_RESULT_OK) {
+      return result;
+    }
 
-  try {
-    spdlog::debug("engine_open_game: calling Application->StartApplication...");
-#if defined(__ANDROID__)
-    AndroidInfoLog("engine_open_game: calling StartApplication('%s')",
-                   normalized_game_root_path.c_str());
-#endif
-    spdlog::default_logger()->flush();
-    Application->StartApplication(ttstr(normalized_game_root_path.c_str()));
-    spdlog::info("engine_open_game: StartApplication returned successfully");
-#if defined(__ANDROID__)
-    AndroidInfoLog("engine_open_game: StartApplication returned successfully");
-#endif
-  } catch (const std::exception& e) {
-    spdlog::error("engine_open_game: StartApplication threw std::exception: {}", e.what());
-    return SetHandleErrorAndReturnLocked(impl, ENGINE_RESULT_INTERNAL_ERROR,
-                                         "StartApplication threw an exception");
-  } catch (...) {
-    spdlog::error("engine_open_game: StartApplication threw unknown exception");
-    return SetHandleErrorAndReturnLocked(impl, ENGINE_RESULT_INTERNAL_ERROR,
-                                         "StartApplication threw an exception");
+    std::lock_guard<std::recursive_mutex> guard(impl->mutex);
+    result = ValidateHandleThreadLocked(impl);
+    if (result != ENGINE_RESULT_OK) {
+      return result;
+    }
+
+    if (impl->state == ToStateValue(EngineState::kDestroyed)) {
+      return SetHandleErrorAndReturnLocked(impl, ENGINE_RESULT_INVALID_STATE,
+                                           "engine is already destroyed");
+    }
+    if (g_runtime_startup_active && g_runtime_startup_owner == handle) {
+      return SetHandleErrorAndReturnLocked(
+          impl, ENGINE_RESULT_INVALID_STATE, "engine startup is already running");
+    }
+    if (g_runtime_active && g_runtime_owner == handle) {
+      SetStartupState(impl, ENGINE_STARTUP_STATE_SUCCEEDED);
+      ClearHandleErrorLocked(impl);
+      SetThreadError(nullptr);
+      return ENGINE_RESULT_OK;
+    }
+    if (g_runtime_active && g_runtime_owner != handle) {
+      return SetHandleErrorAndReturnLocked(
+          impl,
+          ENGINE_RESULT_INVALID_STATE,
+          "runtime is already active on another engine handle");
+    }
+    if (g_runtime_started_once) {
+      return SetHandleErrorAndReturnLocked(
+          impl,
+          ENGINE_RESULT_NOT_SUPPORTED,
+          "runtime restart is not supported yet; restart process to open another game");
+    }
+
+    stale_worker = DetachStartupWorker(impl);
+    ResetStartupState(impl);
+    SetStartupState(impl, ENGINE_STARTUP_STATE_RUNNING);
+    PushStartupLog(impl, "engine_open_game_async: queued startup");
+    MarkStartupWorkerRunning(impl, true);
+    g_runtime_startup_active = true;
+    g_runtime_startup_owner = handle;
+
+    try {
+      impl->startup.worker =
+          std::thread([handle, impl, game_root_copy]() mutable {
+            RunOpenGameAsync(handle, impl, std::move(game_root_copy));
+          });
+    } catch (...) {
+      MarkStartupWorkerRunning(impl, false);
+      SetStartupState(impl, ENGINE_STARTUP_STATE_FAILED);
+      g_runtime_startup_active = false;
+      g_runtime_startup_owner = nullptr;
+      return SetHandleErrorAndReturnLocked(
+          impl, ENGINE_RESULT_INTERNAL_ERROR, "failed to create startup thread");
+    }
+
+    ClearHandleErrorLocked(impl);
+  }
+  if (stale_worker.joinable()) {
+    stale_worker.join();
+  }
+  SetThreadError(nullptr);
+  return ENGINE_RESULT_OK;
+}
+
+engine_result_t engine_get_startup_state(engine_handle_t handle,
+                                         uint32_t* out_state) {
+  if (out_state == nullptr) {
+    return SetThreadErrorAndReturn(ENGINE_RESULT_INVALID_ARGUMENT,
+                                   "out_state is null");
   }
 
-  if (TVPTerminated) {
-    return SetHandleErrorAndReturnLocked(
-        impl,
-        ENGINE_RESULT_INVALID_STATE,
-        "runtime requested termination during startup");
+  std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
+  engine_handle_s* impl = nullptr;
+  auto result = ValidateHandleLocked(handle, &impl);
+  if (result != ENGINE_RESULT_OK) {
+    return result;
+  }
+  std::lock_guard<std::recursive_mutex> guard(impl->mutex);
+  result = ValidateHandleThreadLocked(impl);
+  if (result != ENGINE_RESULT_OK) {
+    return result;
   }
 
-  // Create EngineLoop and start the frame update loop.
-  EngineLoop::CreateInstance();
-  if (auto* loop = EngineLoop::GetInstance(); loop != nullptr) {
-    loop->Start();
+  *out_state = GetStartupState(impl);
+  ClearHandleErrorLocked(impl);
+  SetThreadError(nullptr);
+  return ENGINE_RESULT_OK;
+}
+
+engine_result_t engine_drain_startup_logs(engine_handle_t handle,
+                                          char* out_buffer,
+                                          uint32_t buffer_size,
+                                          uint32_t* out_bytes_written) {
+  if (out_bytes_written == nullptr) {
+    return SetThreadErrorAndReturn(ENGINE_RESULT_INVALID_ARGUMENT,
+                                   "out_bytes_written is null");
+  }
+  if (out_buffer == nullptr || buffer_size == 0) {
+    return SetThreadErrorAndReturn(ENGINE_RESULT_INVALID_ARGUMENT,
+                                   "out_buffer is null or buffer_size is 0");
   }
 
-  // Keep TVPMainScene alive for backward compatibility.
-  if (auto* scene = TVPMainScene::GetInstance(); scene != nullptr) {
-    scene->scheduleUpdate();
+  std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
+  engine_handle_s* impl = nullptr;
+  auto result = ValidateHandleLocked(handle, &impl);
+  if (result != ENGINE_RESULT_OK) {
+    return result;
+  }
+  std::lock_guard<std::recursive_mutex> guard(impl->mutex);
+  result = ValidateHandleThreadLocked(impl);
+  if (result != ENGINE_RESULT_OK) {
+    return result;
   }
 
-  // No native GLFW window in ANGLE Pbuffer mode, so no mouse callbacks
-  // to disable. The native_mouse_callbacks_disabled flag is kept for
-  // backward compatibility but is a no-op now.
-  impl->input.native_mouse_callbacks_disabled = true;
-
-  g_runtime_active = true;
-  g_runtime_owner = handle;
-  g_runtime_started_once = true;
-
-  impl->runtime_owner = true;
-  impl->frame.width = 0;
-  impl->frame.height = 0;
-  impl->frame.stride_bytes = 0;
-  impl->frame.rgba.clear();
-  impl->frame.ready = false;
-  impl->input.active_pointer_ids.clear();
-  impl->input.pending_events.clear();
-  impl->state = ToStateValue(EngineState::kOpened);
+  uint32_t written = 0;
+  {
+    std::lock_guard<std::mutex> startup_guard(impl->startup.mutex);
+    while (!impl->startup.logs.empty()) {
+      const std::string line = impl->startup.logs.front();
+      const uint32_t needed = static_cast<uint32_t>(line.size() + 1u);
+      if (written + needed > buffer_size) {
+        break;
+      }
+      std::memcpy(out_buffer + written, line.data(), line.size());
+      written += static_cast<uint32_t>(line.size());
+      out_buffer[written++] = '\n';
+      impl->startup.logs.pop_front();
+    }
+  }
+  if (written < buffer_size) {
+    out_buffer[written] = '\0';
+  } else {
+    out_buffer[buffer_size - 1] = '\0';
+  }
+  *out_bytes_written = written;
   ClearHandleErrorLocked(impl);
   SetThreadError(nullptr);
   return ENGINE_RESULT_OK;
@@ -626,6 +938,10 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
   result = ValidateHandleThreadLocked(impl);
   if (result != ENGINE_RESULT_OK) {
     return result;
+  }
+  if (g_runtime_startup_active && g_runtime_startup_owner == handle) {
+    return SetHandleErrorAndReturnLocked(
+        impl, ENGINE_RESULT_INVALID_STATE, "engine startup is still running");
   }
 
   if (!g_runtime_active || g_runtime_owner != handle) {
@@ -777,6 +1093,18 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
     } else {
       impl->fps.last_render_time = now;
       impl->fps.initialized = true;
+    }
+  }
+
+  // Async startup may have made the EGL context current on a worker thread.
+  // Ensure the owner/tick thread has a current context before any GL work.
+  {
+    auto& egl = krkr::GetEngineEGLContext();
+    if (egl.IsValid() && !egl.MakeCurrent()) {
+      return SetHandleErrorAndReturnLocked(
+          impl,
+          ENGINE_RESULT_INVALID_STATE,
+          "failed to make EGL context current before engine_tick");
     }
   }
 
@@ -1562,6 +1890,20 @@ engine_result_t engine_get_renderer_info(engine_handle_t handle,
         "engine_open_game must succeed before engine_get_renderer_info");
   }
 
+  auto& egl = krkr::GetEngineEGLContext();
+  if (!egl.IsValid()) {
+    return SetHandleErrorAndReturnLocked(
+        impl,
+        ENGINE_RESULT_INVALID_STATE,
+        "EGL context not initialized");
+  }
+  if (!egl.MakeCurrent()) {
+    return SetHandleErrorAndReturnLocked(
+        impl,
+        ENGINE_RESULT_INVALID_STATE,
+        "failed to make EGL context current");
+  }
+
   // Query GL renderer and version strings from the active ANGLE context.
   const char* gl_renderer = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
   const char* gl_version = reinterpret_cast<const char*>(glGetString(GL_VERSION));
@@ -1598,6 +1940,7 @@ const char* engine_get_last_error(engine_handle_t handle) {
 #else
 
 #include <cstring>
+#include <deque>
 #include <new>
 #include <string>
 #include <unordered_set>
@@ -1610,6 +1953,8 @@ struct engine_handle_s {
   uint32_t surface_width = 1280;
   uint32_t surface_height = 720;
   uint64_t frame_serial = 0;
+  uint32_t startup_state = ENGINE_STARTUP_STATE_IDLE;
+  std::deque<std::string> startup_logs;
 };
 
 namespace {
@@ -1765,6 +2110,79 @@ engine_result_t engine_open_game(engine_handle_t handle,
   }
 
   impl->state = ToStateValue(EngineState::kOpened);
+  impl->startup_state = ENGINE_STARTUP_STATE_SUCCEEDED;
+  impl->startup_logs.clear();
+  impl->startup_logs.push_back("engine_open_game => OK");
+  impl->last_error.clear();
+  SetThreadError(nullptr);
+  return ENGINE_RESULT_OK;
+}
+
+engine_result_t engine_open_game_async(engine_handle_t handle,
+                                       const char* game_root_path_utf8,
+                                       const char* startup_script_utf8) {
+  return engine_open_game(handle, game_root_path_utf8, startup_script_utf8);
+}
+
+engine_result_t engine_get_startup_state(engine_handle_t handle,
+                                         uint32_t* out_state) {
+  if (out_state == nullptr) {
+    return SetThreadErrorAndReturn(ENGINE_RESULT_INVALID_ARGUMENT,
+                                   "out_state is null");
+  }
+
+  std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
+  engine_handle_s* impl = nullptr;
+  auto result = ValidateHandleLocked(handle, &impl);
+  if (result != ENGINE_RESULT_OK) {
+    return result;
+  }
+  std::lock_guard<std::recursive_mutex> guard(impl->mutex);
+  *out_state = impl->startup_state;
+  impl->last_error.clear();
+  SetThreadError(nullptr);
+  return ENGINE_RESULT_OK;
+}
+
+engine_result_t engine_drain_startup_logs(engine_handle_t handle,
+                                          char* out_buffer,
+                                          uint32_t buffer_size,
+                                          uint32_t* out_bytes_written) {
+  if (out_bytes_written == nullptr) {
+    return SetThreadErrorAndReturn(ENGINE_RESULT_INVALID_ARGUMENT,
+                                   "out_bytes_written is null");
+  }
+  if (out_buffer == nullptr || buffer_size == 0) {
+    return SetThreadErrorAndReturn(ENGINE_RESULT_INVALID_ARGUMENT,
+                                   "out_buffer is null or buffer_size is 0");
+  }
+
+  std::lock_guard<std::recursive_mutex> registry_guard(g_registry_mutex);
+  engine_handle_s* impl = nullptr;
+  auto result = ValidateHandleLocked(handle, &impl);
+  if (result != ENGINE_RESULT_OK) {
+    return result;
+  }
+
+  std::lock_guard<std::recursive_mutex> guard(impl->mutex);
+  uint32_t written = 0;
+  while (!impl->startup_logs.empty()) {
+    const std::string line = impl->startup_logs.front();
+    const uint32_t needed = static_cast<uint32_t>(line.size() + 1u);
+    if (written + needed > buffer_size) {
+      break;
+    }
+    std::memcpy(out_buffer + written, line.data(), line.size());
+    written += static_cast<uint32_t>(line.size());
+    out_buffer[written++] = '\n';
+    impl->startup_logs.pop_front();
+  }
+  if (written < buffer_size) {
+    out_buffer[written] = '\0';
+  } else {
+    out_buffer[buffer_size - 1] = '\0';
+  }
+  *out_bytes_written = written;
   impl->last_error.clear();
   SetThreadError(nullptr);
   return ENGINE_RESULT_OK;
@@ -1790,7 +2208,7 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
     return ENGINE_RESULT_INVALID_STATE;
   }
 
-  impl->frame.serial += 1;
+  impl->frame_serial += 1;
   impl->last_error.clear();
   SetThreadError(nullptr);
   return ENGINE_RESULT_OK;
@@ -1896,8 +2314,8 @@ engine_result_t engine_set_surface_size(engine_handle_t handle,
     return ENGINE_RESULT_INVALID_STATE;
   }
 
-  impl->frame.surface_width = width;
-  impl->frame.surface_height = height;
+  impl->surface_width = width;
+  impl->surface_height = height;
   impl->last_error.clear();
   SetThreadError(nullptr);
   return ENGINE_RESULT_OK;
@@ -1930,11 +2348,11 @@ engine_result_t engine_get_frame_desc(engine_handle_t handle,
 
   std::memset(out_frame_desc, 0, sizeof(*out_frame_desc));
   out_frame_desc->struct_size = sizeof(engine_frame_desc_t);
-  out_frame_desc->width = impl->frame.surface_width;
-  out_frame_desc->height = impl->frame.surface_height;
-  out_frame_desc->stride_bytes = impl->frame.surface_width * 4u;
+  out_frame_desc->width = impl->surface_width;
+  out_frame_desc->height = impl->surface_height;
+  out_frame_desc->stride_bytes = impl->surface_width * 4u;
   out_frame_desc->pixel_format = ENGINE_PIXEL_FORMAT_RGBA8888;
-  out_frame_desc->frame_serial = impl->frame.serial;
+  out_frame_desc->frame_serial = impl->frame_serial;
 
   impl->last_error.clear();
   SetThreadError(nullptr);
@@ -1965,8 +2383,8 @@ engine_result_t engine_read_frame_rgba(engine_handle_t handle,
   }
 
   const size_t required_size =
-      static_cast<size_t>(impl->frame.surface_width) *
-      static_cast<size_t>(impl->frame.surface_height) * 4u;
+      static_cast<size_t>(impl->surface_width) *
+      static_cast<size_t>(impl->surface_height) * 4u;
   if (out_pixels_size < required_size) {
     SetHandleErrorLocked(
         impl,
