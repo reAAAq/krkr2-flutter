@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -18,6 +20,7 @@ class SettingsPage extends StatefulWidget {
     required this.fpsLimitEnabled,
     required this.targetFps,
     required this.renderer,
+    required this.angleBackend,
   });
 
   final EngineMode engineMode;
@@ -28,6 +31,7 @@ class SettingsPage extends StatefulWidget {
   final bool fpsLimitEnabled;
   final int targetFps;
   final String renderer;
+  final String angleBackend;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -42,6 +46,7 @@ class SettingsResult {
     required this.fpsLimitEnabled,
     required this.targetFps,
     required this.renderer,
+    required this.angleBackend,
   });
 
   final EngineMode engineMode;
@@ -50,6 +55,7 @@ class SettingsResult {
   final bool fpsLimitEnabled;
   final int targetFps;
   final String renderer;
+  final String angleBackend;
 }
 
 class _SettingsPageState extends State<SettingsPage> {
@@ -59,6 +65,7 @@ class _SettingsPageState extends State<SettingsPage> {
   static const String _fpsLimitEnabledKey = 'krkr2_fps_limit_enabled';
   static const String _targetFpsKey = 'krkr2_target_fps';
   static const String _rendererKey = 'krkr2_renderer';
+  static const String _angleBackendKey = 'krkr2_angle_backend';
   static const String _localeKey = 'krkr2_locale';
   static const String _themeModeKey = 'krkr2_theme_mode';
   static const List<int> _fpsOptions = [30, 60, 120];
@@ -69,6 +76,7 @@ class _SettingsPageState extends State<SettingsPage> {
   late bool _fpsLimitEnabled;
   late int _targetFps;
   late String _renderer;
+  String _angleBackend = 'gles';
   String _localeCode = 'system';
   String _themeModeCode = 'dark';
   bool _dirty = false;
@@ -82,6 +90,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _fpsLimitEnabled = widget.fpsLimitEnabled;
     _targetFps = widget.targetFps;
     _renderer = widget.renderer;
+    _angleBackend = widget.angleBackend;
     _loadLocale();
     _loadThemeMode();
   }
@@ -119,6 +128,7 @@ class _SettingsPageState extends State<SettingsPage> {
     await prefs.setBool(_fpsLimitEnabledKey, _fpsLimitEnabled);
     await prefs.setInt(_targetFpsKey, _targetFps);
     await prefs.setString(_rendererKey, _renderer);
+    await prefs.setString(_angleBackendKey, _angleBackend);
 
     if (mounted) {
       Navigator.pop(
@@ -130,6 +140,7 @@ class _SettingsPageState extends State<SettingsPage> {
           fpsLimitEnabled: _fpsLimitEnabled,
           targetFps: _targetFps,
           renderer: _renderer,
+          angleBackend: _angleBackend,
         ),
       );
     }
@@ -307,6 +318,51 @@ class _SettingsPageState extends State<SettingsPage> {
                       ],
                     ),
                   ),
+                  // ── Graphics Backend (Android only) ──
+                  if (Platform.isAndroid) ...[                  
+                    const Divider(height: 24),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(l10n.graphicsBackend,
+                              style: Theme.of(context).textTheme.titleSmall),
+                          const SizedBox(height: 4),
+                          Text(
+                            l10n.graphicsBackendHint,
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: colorScheme.onSurface
+                                      .withValues(alpha: 0.6),
+                                ),
+                          ),
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            width: double.infinity,
+                            child: SegmentedButton<String>(
+                              segments: [
+                                ButtonSegment<String>(
+                                  value: 'gles',
+                                  label: Text(l10n.opengles),
+                                  icon: const Icon(Icons.memory),
+                                ),
+                                ButtonSegment<String>(
+                                  value: 'vulkan',
+                                  label: Text(l10n.vulkan),
+                                  icon: const Icon(Icons.bolt),
+                                ),
+                              ],
+                              selected: {_angleBackend},
+                              onSelectionChanged: (Set<String> selected) {
+                                setState(() => _angleBackend = selected.first);
+                                _markDirty();
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const Divider(height: 24),
                   SwitchListTile(
                     title: Text(l10n.performanceOverlay),

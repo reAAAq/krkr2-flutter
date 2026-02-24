@@ -42,6 +42,7 @@ class _GamePageState extends State<GamePage>
   static const String _fpsLimitEnabledKey = 'krkr2_fps_limit_enabled';
   static const String _targetFpsKey = 'krkr2_target_fps';
   static const String _rendererKey = 'krkr2_renderer';
+  static const String _angleBackendKey = 'krkr2_angle_backend';
   static const int _defaultFps = 60;
 
   Ticker? _ticker;
@@ -258,6 +259,13 @@ class _GamePageState extends State<GamePage>
     final renderer = prefs.getString(_rendererKey) ?? 'opengl';
     _log('Setting renderer=$renderer');
     await _bridge.engineSetOption(key: 'renderer', value: renderer);
+
+    // Set ANGLE backend (gles / vulkan) — Android only, others ignore
+    if (Platform.isAndroid) {
+      final angleBackend = prefs.getString(_angleBackendKey) ?? 'gles';
+      _log('Setting angle_backend=$angleBackend');
+      await _bridge.engineSetOption(key: 'angle_backend', value: angleBackend);
+    }
 
     if (!mounted) return;
     setState(() => _phase = _EnginePhase.opening);

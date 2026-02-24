@@ -30,6 +30,7 @@ class _HomePageState extends State<HomePage> {
   static const String _fpsLimitEnabledKey = 'krkr2_fps_limit_enabled';
   static const String _targetFpsKey = 'krkr2_target_fps';
   static const String _rendererKey = 'krkr2_renderer';
+  static const String _angleBackendKey = 'krkr2_angle_backend';
   static const List<int> _fpsOptions = [30, 60, 120];
   static const int _defaultFps = 60;
 
@@ -44,6 +45,7 @@ class _HomePageState extends State<HomePage> {
   bool _fpsLimitEnabled = false;
   int _targetFps = _defaultFps;
   String _renderer = 'opengl';
+  String _angleBackend = 'gles';
 
   String? _resolveBuiltInDylibPath() {
     if (Platform.isIOS) {
@@ -92,6 +94,7 @@ class _HomePageState extends State<HomePage> {
     _targetFps = prefs.getInt(_targetFpsKey) ?? _defaultFps;
     if (!_fpsOptions.contains(_targetFps)) _targetFps = _defaultFps;
     _renderer = prefs.getString(_rendererKey) ?? 'opengl';
+    _angleBackend = prefs.getString(_angleBackendKey) ?? 'gles';
     await _gameManager.load();
 
     if (Platform.isIOS) {
@@ -401,6 +404,7 @@ class _HomePageState extends State<HomePage> {
           fpsLimitEnabled: _fpsLimitEnabled,
           targetFps: _targetFps,
           renderer: _renderer,
+          angleBackend: _angleBackend,
         ),
       ),
     );
@@ -412,6 +416,7 @@ class _HomePageState extends State<HomePage> {
         _fpsLimitEnabled = result.fpsLimitEnabled;
         _targetFps = result.targetFps;
         _renderer = result.renderer;
+        _angleBackend = result.angleBackend;
       });
     }
   }
