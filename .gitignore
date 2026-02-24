@@ -5,6 +5,7 @@
 /**/build/
 /**/out/
 /**/bin/
+vcpkg_installed/
 
 .idea/
 .vscode/
