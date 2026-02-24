@@ -11,6 +11,10 @@ if (NOT WINDOWS_STORE AND NOT USE_METAL AND NOT IOS)
     set(USE_OPENGL ON)
 endif()
 
+if (NOT DEFINED USE_VULKAN)
+    set(USE_VULKAN OFF)
+endif()
+
 if(MSVC)
     add_compile_options(/d2guard4 /Wv:18 /guard:cf /permissive /bigobj)
     add_link_options(/guard:cf)
@@ -119,6 +123,7 @@ include(GLESv2.cmake)
 include(D3D.cmake)
 include(GL.cmake)
 include(Metal.cmake)
+include(Vulkan.cmake)
 
 set(no_gl_prototypes
     GL_GLES_PROTOTYPES=0

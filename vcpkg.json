@@ -39,6 +39,9 @@
     {
       "name": "angle",
       "default-features": false,
+      "features": [
+        "vulkan"
+      ],
       "platform": "linux | windows | android"
     },
     {

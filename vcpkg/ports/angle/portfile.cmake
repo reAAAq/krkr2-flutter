@@ -39,6 +39,11 @@ if ("metal" IN_LIST FEATURES)
     set(USE_METAL ON)
 endif()
 
+set(USE_VULKAN OFF)
+if ("vulkan" IN_LIST FEATURES)
+    set(USE_VULKAN ON)
+endif()
+
 # chromium/7258
 set(ANGLE_COMMIT d9fc4a372074b1079c193c422fc4a180e79b6636)
 set(ANGLE_VERSION 7258)
@@ -53,6 +58,7 @@ vcpkg_from_github(
     # On update check headers against opengl-registry
     PATCHES
         001-fix-builder-error.patch
+        002-fix-vma-dynamic-vulkan-functions.patch
 )
 
 # Generate angle_commit.h
@@ -86,6 +92,15 @@ vcpkg_download_distfile(GNI_TO_CMAKE_PY
 # Generate CMake files from GN / GNI files
 x_vcpkg_get_python_packages(PYTHON_VERSION "3" OUT_PYTHON_VAR "PYTHON3" PACKAGES ply)
 
+# Patch Vulkan BUILD.gn to comment out imports that gni-to-cmake.py cannot resolve.
+# The gni-to-cmake.py exclude list handles '//build/.*' but not '//build_overrides/.*'.
+set(_vulkan_build_gn "${SOURCE_PATH}/src/libANGLE/renderer/vulkan/BUILD.gn")
+if(EXISTS "${_vulkan_build_gn}")
+    file(READ "${_vulkan_build_gn}" _vulkan_gn_content)
+    string(REPLACE "import(\"//build_overrides/swiftshader.gni\")" "#import(\"//build_overrides/swiftshader.gni\")" _vulkan_gn_content "${_vulkan_gn_content}")
+    file(WRITE "${_vulkan_build_gn}" "${_vulkan_gn_content}")
+endif()
+
 set(_root_gni_files_to_convert
   "compiler.gni Compiler.cmake"
   "libGLESv2.gni GLESv2.cmake"
@@ -94,6 +109,7 @@ set(_renderer_gn_files_to_convert
   "libANGLE/renderer/d3d/BUILD.gn D3D.cmake"
   "libANGLE/renderer/gl/BUILD.gn GL.cmake"
   "libANGLE/renderer/metal/BUILD.gn Metal.cmake"
+  "libANGLE/renderer/vulkan/BUILD.gn Vulkan.cmake"
 )
 
 foreach(_root_gni_file IN LISTS _root_gni_files_to_convert)
@@ -118,6 +134,20 @@ foreach(_renderer_gn_file IN LISTS _renderer_gn_files_to_convert)
       LOGNAME "gni-to-cmake-${_dst_file}-${TARGET_TRIPLET}"
   )
 endforeach()
+
+# Fix gni-to-cmake.py generation bug in Vulkan.cmake:
+# The script incorrectly merges "list(APPEND vulkan_backend_sources" with "endif()"
+# producing "list(APPEND vulkan_backend_sourcesendif()" which is invalid CMake syntax.
+# The original GN was: vulkan_backend_sources += vulkan_backend_dma_buf_sources
+set(_vulkan_cmake "${SOURCE_PATH}/Vulkan.cmake")
+if(EXISTS "${_vulkan_cmake}")
+    file(READ "${_vulkan_cmake}" _vulkan_cmake_content)
+    string(REPLACE "list(APPEND vulkan_backend_sourcesendif()" "list(APPEND vulkan_backend_sources \${vulkan_backend_dma_buf_sources})\nendif()" _vulkan_cmake_content "${_vulkan_cmake_content}")
+    # Fix: In ANGLE's GN build, Android does not set is_linux=true, but our CMakeLists.txt does.
+    # Exclude Android from the Linux DMA-BUF sources condition to avoid compiling Linux desktop files on Android.
+    string(REPLACE "if(is_linux OR is_chromeos)" "if((is_linux OR is_chromeos) AND NOT is_android)" _vulkan_cmake_content "${_vulkan_cmake_content}")
+    file(WRITE "${_vulkan_cmake}" "${_vulkan_cmake_content}")
+endif()
 
 # Fetch additional CMake files from WebKit ANGLE buildsystem
 vcpkg_download_distfile(WK_ANGLE_INCLUDE_CMAKELISTS
@@ -169,7 +199,10 @@ vcpkg_cmake_configure(
         "-DANGLE_USE_D3D11_COMPOSITOR_NATIVE_WINDOW=${ANGLE_USE_D3D11_COMPOSITOR_NATIVE_WINDOW}"
         "-DVCPKG_TARGET_IS_WINDOWS=${VCPKG_TARGET_IS_WINDOWS}"
         "-DUSE_METAL=${USE_METAL}"
+        "-DUSE_VULKAN=${USE_VULKAN}"
         "-DIOS=${ANGLE_IOS_FLAG}"
+    MAYBE_UNUSED_VARIABLES
+        DISABLE_INSTALL_HEADERS
 )
 
 vcpkg_cmake_install()
