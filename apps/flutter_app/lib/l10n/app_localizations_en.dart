@@ -179,6 +179,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get software => 'Software';
 
   @override
+  String get graphicsBackend => 'Graphics Backend';
+
+  @override
+  String get graphicsBackendHint =>
+      'ANGLE translation layer backend (Android only). Requires restart.';
+
+  @override
+  String get opengles => 'OpenGL ES';
+
+  @override
+  String get vulkan => 'Vulkan';
+
+  @override
   String get performanceOverlay => 'Performance Overlay';
 
   @override

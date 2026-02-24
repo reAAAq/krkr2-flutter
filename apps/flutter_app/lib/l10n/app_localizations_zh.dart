@@ -172,6 +172,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get software => '软件渲染';
 
   @override
+  String get graphicsBackend => '图形后端';
+
+  @override
+  String get graphicsBackendHint => 'ANGLE 翻译层后端（仅 Android）。需重启生效。';
+
+  @override
+  String get opengles => 'OpenGL ES';
+
+  @override
+  String get vulkan => 'Vulkan';
+
+  @override
   String get performanceOverlay => '性能监控';
 
   @override

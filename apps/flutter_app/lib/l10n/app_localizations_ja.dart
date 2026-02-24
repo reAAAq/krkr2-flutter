@@ -174,6 +174,18 @@ class AppLocalizationsJa extends AppLocalizations {
   String get software => 'ソフトウェア';
 
   @override
+  String get graphicsBackend => 'グラフィックスバックエンド';
+
+  @override
+  String get graphicsBackendHint => 'ANGLE翻訳レイヤーバックエンド（Androidのみ）。再起動が必要です。';
+
+  @override
+  String get opengles => 'OpenGL ES';
+
+  @override
+  String get vulkan => 'Vulkan';
+
+  @override
   String get performanceOverlay => 'パフォーマンスオーバーレイ';
 
   @override

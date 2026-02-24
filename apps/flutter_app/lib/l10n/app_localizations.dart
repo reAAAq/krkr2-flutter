@@ -412,6 +412,30 @@ abstract class AppLocalizations {
   /// **'Software'**
   String get software;
 
+  /// No description provided for @graphicsBackend.
+  ///
+  /// In en, this message translates to:
+  /// **'Graphics Backend'**
+  String get graphicsBackend;
+
+  /// No description provided for @graphicsBackendHint.
+  ///
+  /// In en, this message translates to:
+  /// **'ANGLE translation layer backend (Android only). Requires restart.'**
+  String get graphicsBackendHint;
+
+  /// No description provided for @opengles.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenGL ES'**
+  String get opengles;
+
+  /// No description provided for @vulkan.
+  ///
+  /// In en, this message translates to:
+  /// **'Vulkan'**
+  String get vulkan;
+
   /// No description provided for @performanceOverlay.
   ///
   /// In en, this message translates to:
