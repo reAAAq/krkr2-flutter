@@ -40,8 +40,10 @@ void krkr_GetSurfaceDimensions(uint32_t*, uint32_t*);
 #include "base/impl/SysInitImpl.h"
 #include "visual/ogl/ogl_common.h"
 #include "visual/ogl/krkr_egl_context.h"
+#include "visual/ogl/angle_backend.h"
 #include "visual/impl/WindowImpl.h"
 #include "visual/RenderManager.h"
+#include "engine_options.h"
 
 int TVPDrawSceneOnce(int interval);
 
@@ -51,30 +53,42 @@ struct engine_handle_s {
   int state = 0;
   std::thread::id owner_thread;
   bool runtime_owner = false;
-  uint32_t surface_width = 1280;
-  uint32_t surface_height = 720;
-  uint64_t frame_serial = 0;
-  uint32_t frame_width = 0;
-  uint32_t frame_height = 0;
-  uint32_t frame_stride_bytes = 0;
-  std::vector<uint8_t> frame_rgba;
-  bool frame_ready = false;
-  std::unordered_set<intptr_t> active_pointer_ids;
-  std::deque<engine_input_event_t> pending_input_events;
-  bool native_mouse_callbacks_disabled = false;
-  bool iosurface_attached = false;
-  bool native_window_attached = false;
-  bool frame_rendered_this_tick = false;
   uint64_t tick_count = 0;
 
-  // ANGLE backend selection (Android only; other platforms ignore this)
-  krkr::AngleBackend angle_backend = krkr::AngleBackend::OpenGLES;
+  // Frame state — readback buffer and tracking
+  struct FrameState {
+    uint32_t surface_width = 1280;
+    uint32_t surface_height = 720;
+    uint64_t serial = 0;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    uint32_t stride_bytes = 0;
+    std::vector<uint8_t> rgba;
+    bool ready = false;
+    bool rendered_this_tick = false;
+  } frame;
 
   // Frame rate limiting (0 = unlimited / follow vsync)
-  uint32_t fps_limit = 0;
-  uint64_t frame_interval_us = 0;
-  std::chrono::steady_clock::time_point last_render_time{};
-  bool fps_limit_initialized = false;
+  struct FpsLimitState {
+    uint32_t limit = 0;
+    uint64_t interval_us = 0;
+    std::chrono::steady_clock::time_point last_render_time{};
+    bool initialized = false;
+  } fps;
+
+  // Input event queue
+  struct InputState {
+    std::deque<engine_input_event_t> pending_events;
+    std::unordered_set<intptr_t> active_pointer_ids;
+    bool native_mouse_callbacks_disabled = false;
+  } input;
+
+  // Render target state
+  struct RenderTargetState {
+    krkr::AngleBackend angle_backend = krkr::AngleBackend::OpenGLES;
+    bool iosurface_attached = false;
+    bool native_window_attached = false;
+  } render;
 };
 
 namespace {
@@ -234,8 +248,8 @@ struct FrameReadbackLayout {
 
 FrameReadbackLayout GetFrameReadbackLayoutLocked(engine_handle_s* impl) {
   FrameReadbackLayout layout;
-  layout.width = impl->surface_width;
-  layout.height = impl->surface_height;
+  layout.width = impl->frame.surface_width;
+  layout.height = impl->frame.surface_height;
 
   GLint viewport[4] = {0, 0, 0, 0};
   glGetIntegerv(GL_VIEWPORT, viewport);
@@ -510,7 +524,7 @@ engine_result_t engine_open_game(engine_handle_t handle,
   TVPTerminateOnNoWindowStartup = false;
   TVPHostSuppressProcessExit = true;
 
-  if (!EnsureEngineRuntimeInitialized(impl->surface_width, impl->surface_height, impl->angle_backend)) {
+  if (!EnsureEngineRuntimeInitialized(impl->frame.surface_width, impl->frame.surface_height, impl->render.angle_backend)) {
     return SetHandleErrorAndReturnLocked(
         impl,
         ENGINE_RESULT_INTERNAL_ERROR,
@@ -578,20 +592,20 @@ engine_result_t engine_open_game(engine_handle_t handle,
   // No native GLFW window in ANGLE Pbuffer mode, so no mouse callbacks
   // to disable. The native_mouse_callbacks_disabled flag is kept for
   // backward compatibility but is a no-op now.
-  impl->native_mouse_callbacks_disabled = true;
+  impl->input.native_mouse_callbacks_disabled = true;
 
   g_runtime_active = true;
   g_runtime_owner = handle;
   g_runtime_started_once = true;
 
   impl->runtime_owner = true;
-  impl->frame_width = 0;
-  impl->frame_height = 0;
-  impl->frame_stride_bytes = 0;
-  impl->frame_rgba.clear();
-  impl->frame_ready = false;
-  impl->active_pointer_ids.clear();
-  impl->pending_input_events.clear();
+  impl->frame.width = 0;
+  impl->frame.height = 0;
+  impl->frame.stride_bytes = 0;
+  impl->frame.rgba.clear();
+  impl->frame.ready = false;
+  impl->input.active_pointer_ids.clear();
+  impl->input.pending_events.clear();
   impl->state = ToStateValue(EngineState::kOpened);
   ClearHandleErrorLocked(impl);
   SetThreadError(nullptr);
@@ -632,9 +646,9 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
   }
   impl->tick_count += 1;
 
-  while (!impl->pending_input_events.empty()) {
-    const engine_input_event_t queued_event = impl->pending_input_events.front();
-    impl->pending_input_events.pop_front();
+  while (!impl->input.pending_events.empty()) {
+    const engine_input_event_t queued_event = impl->input.pending_events.front();
+    impl->input.pending_events.pop_front();
 
     const char* dispatch_error = nullptr;
     const engine_result_t dispatch_result =
@@ -652,7 +666,7 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
   // ANativeWindow in a global variable. Here we detect it and
   // attach it as the EGL WindowSurface render target so that
   // eglSwapBuffers delivers frames to Flutter's SurfaceTexture.
-  if (!impl->native_window_attached) {
+  if (!impl->render.native_window_attached) {
     ANativeWindow* pending_window = krkr_GetNativeWindow();
     if (pending_window) {
       uint32_t win_w = 0, win_h = 0;
@@ -665,7 +679,7 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
           // to create EGL display + context + WindowSurface in one step,
           // bypassing Pbuffer which may not be supported on this device.
           AndroidInfoLog("engine_tick: EGL not valid, InitializeWithWindow %ux%u", win_w, win_h);
-          if (egl.InitializeWithWindow(pending_window, win_w, win_h, impl->angle_backend)) {
+          if (egl.InitializeWithWindow(pending_window, win_w, win_h, impl->render.angle_backend)) {
             attached = true;
             AndroidInfoLog("engine_tick: InitializeWithWindow success");
           } else {
@@ -682,7 +696,7 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
           }
         }
         if (attached) {
-          impl->native_window_attached = true;
+          impl->render.native_window_attached = true;
           spdlog::info("engine_tick: auto-attached ANativeWindow {}x{}", win_w, win_h);
           AndroidInfoLog("engine_tick: auto-attached ANativeWindow %ux%u", win_w, win_h);
           // Update window size for the draw device
@@ -713,7 +727,7 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
       // Window was detached from JNI side — revert to Pbuffer
       auto& egl = krkr::GetEngineEGLContext();
       egl.DetachNativeWindow();
-      impl->native_window_attached = false;
+      impl->render.native_window_attached = false;
       spdlog::info("engine_tick: ANativeWindow detached, reverted to Pbuffer mode");
       AndroidInfoLog("engine_tick: ANativeWindow detached -> Pbuffer");
     }
@@ -730,14 +744,14 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
   // Frame rate limiting: when fps_limit > 0, skip rendering if not enough
   // time has elapsed since the last rendered frame. Input events above are
   // always processed regardless of the limit.
-  if (impl->fps_limit > 0) {
+  if (impl->fps.limit > 0) {
     const auto now = std::chrono::steady_clock::now();
-    if (impl->fps_limit_initialized) {
+    if (impl->fps.initialized) {
       const auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(
-          now - impl->last_render_time).count();
-      if (static_cast<uint64_t>(elapsed_us) < impl->frame_interval_us) {
+          now - impl->fps.last_render_time).count();
+      if (static_cast<uint64_t>(elapsed_us) < impl->fps.interval_us) {
         // Not yet time for next frame — skip rendering
-        impl->frame_rendered_this_tick = false;
+        impl->frame.rendered_this_tick = false;
         ClearHandleErrorLocked(impl);
         SetThreadError(nullptr);
         return ENGINE_RESULT_OK;
@@ -752,17 +766,17 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
       // If we've fallen behind by more than one full interval (e.g.
       // the app was suspended), snap to `now` to avoid a burst of
       // catch-up renders.
-      const auto ideal_next = impl->last_render_time +
-          std::chrono::microseconds(impl->frame_interval_us);
-      if (now - ideal_next > std::chrono::microseconds(impl->frame_interval_us)) {
+      const auto ideal_next = impl->fps.last_render_time +
+          std::chrono::microseconds(impl->fps.interval_us);
+      if (now - ideal_next > std::chrono::microseconds(impl->fps.interval_us)) {
         // Fallen too far behind — reset to now
-        impl->last_render_time = now;
+        impl->fps.last_render_time = now;
       } else {
-        impl->last_render_time = ideal_next;
+        impl->fps.last_render_time = ideal_next;
       }
     } else {
-      impl->last_render_time = now;
-      impl->fps_limit_initialized = true;
+      impl->fps.last_render_time = now;
+      impl->fps.initialized = true;
     }
   }
 
@@ -793,47 +807,47 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
   }
 
   // Mark that a frame was rendered this tick (for IOSurface mode notification)
-  impl->frame_rendered_this_tick = true;
+  impl->frame.rendered_this_tick = true;
 
   // In IOSurface mode, the engine renders directly to the shared IOSurface
   // via the FBO — no need for glReadPixels. Skip the expensive readback.
-  if (impl->native_window_attached) {
+  if (impl->render.native_window_attached) {
     // Android WindowSurface mode — TVPForceSwapBuffer() (called by
     // TVPDrawSceneOnce above) already performed eglSwapBuffers to deliver
     // the frame to Flutter's SurfaceTexture. Just update frame tracking.
-    impl->frame_serial += 1;
-    impl->frame_ready = true;
-  } else if (!impl->iosurface_attached) {
+    impl->frame.serial += 1;
+    impl->frame.ready = true;
+  } else if (!impl->render.iosurface_attached) {
     // Legacy Pbuffer readback path (slow, for backward compatibility)
     const FrameReadbackLayout layout = GetFrameReadbackLayoutLocked(impl);
     const size_t required_size =
         static_cast<size_t>(layout.stride_bytes) *
         static_cast<size_t>(layout.height);
-    if (impl->frame_rgba.size() != required_size) {
-      impl->frame_rgba.assign(required_size, 0);
+    if (impl->frame.rgba.size() != required_size) {
+      impl->frame.rgba.assign(required_size, 0);
     }
 
     if (required_size > 0 &&
-        ReadCurrentFrameRgba(layout, impl->frame_rgba.data())) {
-      impl->frame_width = layout.width;
-      impl->frame_height = layout.height;
-      impl->frame_stride_bytes = layout.stride_bytes;
-      impl->frame_ready = true;
-      impl->frame_serial += 1;
-    } else if (!impl->frame_ready && required_size > 0) {
-      std::fill(impl->frame_rgba.begin(), impl->frame_rgba.end(), 0);
-      impl->frame_width = layout.width;
-      impl->frame_height = layout.height;
-      impl->frame_stride_bytes = layout.stride_bytes;
-      impl->frame_ready = true;
-      impl->frame_serial += 1;
+        ReadCurrentFrameRgba(layout, impl->frame.rgba.data())) {
+      impl->frame.width = layout.width;
+      impl->frame.height = layout.height;
+      impl->frame.stride_bytes = layout.stride_bytes;
+      impl->frame.ready = true;
+      impl->frame.serial += 1;
+    } else if (!impl->frame.ready && required_size > 0) {
+      std::fill(impl->frame.rgba.begin(), impl->frame.rgba.end(), 0);
+      impl->frame.width = layout.width;
+      impl->frame.height = layout.height;
+      impl->frame.stride_bytes = layout.stride_bytes;
+      impl->frame.ready = true;
+      impl->frame.serial += 1;
     }
   } else {
     // IOSurface mode — just increment frame serial, no readback needed.
     // The render output is already in the shared IOSurface.
     glFlush(); // Ensure GPU commands are submitted
-    impl->frame_serial += 1;
-    impl->frame_ready = true;
+    impl->frame.serial += 1;
+    impl->frame.ready = true;
   }
 
   ClearHandleErrorLocked(impl);
@@ -842,11 +856,11 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
   if (impl->tick_count % 120 == 0) {
     AndroidInfoLog("engine_tick: tick=%llu rendered=%d serial=%llu native_window=%d iosurface=%d frame_ready=%d",
                    static_cast<unsigned long long>(impl->tick_count),
-                   impl->frame_rendered_this_tick ? 1 : 0,
-                   static_cast<unsigned long long>(impl->frame_serial),
-                   impl->native_window_attached ? 1 : 0,
-                   impl->iosurface_attached ? 1 : 0,
-                   impl->frame_ready ? 1 : 0);
+                   impl->frame.rendered_this_tick ? 1 : 0,
+                   static_cast<unsigned long long>(impl->frame.serial),
+                   impl->render.native_window_attached ? 1 : 0,
+                   impl->render.iosurface_attached ? 1 : 0,
+                   impl->frame.ready ? 1 : 0);
   }
 #endif
   return ENGINE_RESULT_OK;
@@ -885,8 +899,8 @@ engine_result_t engine_pause(engine_handle_t handle) {
   }
 
   Application->OnDeactivate();
-  impl->active_pointer_ids.clear();
-  impl->pending_input_events.clear();
+  impl->input.active_pointer_ids.clear();
+  impl->input.pending_events.clear();
   impl->state = ToStateValue(EngineState::kPaused);
   ClearHandleErrorLocked(impl);
   SetThreadError(nullptr);
@@ -958,26 +972,30 @@ engine_result_t engine_set_option(engine_handle_t handle,
 
   // Handle fps_limit option: controls C++ side frame rate throttling
   const std::string key(option->key_utf8);
-  if (key == "fps_limit") {
+  if (key == ENGINE_OPTION_FPS_LIMIT) {
     const int fps = std::atoi(option->value_utf8);
-    impl->fps_limit = fps > 0 ? static_cast<uint32_t>(fps) : 0;
-    impl->frame_interval_us = fps > 0 ? (1000000u / static_cast<uint32_t>(fps)) : 0;
+    impl->fps.limit = fps > 0 ? static_cast<uint32_t>(fps) : 0;
+    impl->fps.interval_us = fps > 0 ? (1000000u / static_cast<uint32_t>(fps)) : 0;
     // Reset timing so the next tick renders immediately
-    impl->fps_limit_initialized = false;
+    impl->fps.initialized = false;
     spdlog::info("engine_set_option: fps_limit={} (interval={}us)",
-                 impl->fps_limit, impl->frame_interval_us);
+                 impl->fps.limit, impl->fps.interval_us);
     ClearHandleErrorLocked(impl);
     SetThreadError(nullptr);
     return ENGINE_RESULT_OK;
   }
 
   // Handle angle_backend option: controls ANGLE EGL backend (Android only)
-  if (key == "angle_backend") {
+  if (key == ENGINE_OPTION_ANGLE_BACKEND) {
+    if (g_engine_bootstrapped) {
+      spdlog::warn("engine_set_option: angle_backend changed after engine initialization, "
+                   "restart required to apply new backend");
+    }
     const std::string val(option->value_utf8);
-    if (val == "vulkan") {
-      impl->angle_backend = krkr::AngleBackend::Vulkan;
+    if (val == ENGINE_ANGLE_BACKEND_VULKAN) {
+      impl->render.angle_backend = krkr::AngleBackend::Vulkan;
     } else {
-      impl->angle_backend = krkr::AngleBackend::OpenGLES;
+      impl->render.angle_backend = krkr::AngleBackend::OpenGLES;
     }
     spdlog::info("engine_set_option: angle_backend={}", option->value_utf8);
     ClearHandleErrorLocked(impl);
@@ -1018,13 +1036,13 @@ engine_result_t engine_set_surface_size(engine_handle_t handle,
                                          "engine is already destroyed");
   }
 
-  impl->surface_width = width;
-  impl->surface_height = height;
-  impl->frame_width = 0;
-  impl->frame_height = 0;
-  impl->frame_stride_bytes = 0;
-  impl->frame_rgba.clear();
-  impl->frame_ready = false;
+  impl->frame.surface_width = width;
+  impl->frame.surface_height = height;
+  impl->frame.width = 0;
+  impl->frame.height = 0;
+  impl->frame.stride_bytes = 0;
+  impl->frame.rgba.clear();
+  impl->frame.ready = false;
 
   // Propagate the new surface size to the EGL Pbuffer and viewport.
   // Skip Pbuffer resize when using WindowSurface (Android) — the
@@ -1090,11 +1108,11 @@ engine_result_t engine_get_frame_desc(engine_handle_t handle,
   }
 
   FrameReadbackLayout layout;
-  if (impl->frame_ready && impl->frame_width > 0 && impl->frame_height > 0 &&
-      impl->frame_stride_bytes > 0) {
-    layout.width = impl->frame_width;
-    layout.height = impl->frame_height;
-    layout.stride_bytes = impl->frame_stride_bytes;
+  if (impl->frame.ready && impl->frame.width > 0 && impl->frame.height > 0 &&
+      impl->frame.stride_bytes > 0) {
+    layout.width = impl->frame.width;
+    layout.height = impl->frame.height;
+    layout.stride_bytes = impl->frame.stride_bytes;
   } else {
     layout = GetFrameReadbackLayoutLocked(impl);
   }
@@ -1105,7 +1123,7 @@ engine_result_t engine_get_frame_desc(engine_handle_t handle,
   out_frame_desc->height = layout.height;
   out_frame_desc->stride_bytes = layout.stride_bytes;
   out_frame_desc->pixel_format = ENGINE_PIXEL_FORMAT_RGBA8888;
-  out_frame_desc->frame_serial = impl->frame_serial;
+  out_frame_desc->frame_serial = impl->frame.serial;
 
   ClearHandleErrorLocked(impl);
   SetThreadError(nullptr);
@@ -1142,21 +1160,21 @@ engine_result_t engine_read_frame_rgba(engine_handle_t handle,
   }
 
   FrameReadbackLayout layout;
-  if (impl->frame_ready && impl->frame_width > 0 && impl->frame_height > 0 &&
-      impl->frame_stride_bytes > 0) {
-    layout.width = impl->frame_width;
-    layout.height = impl->frame_height;
-    layout.stride_bytes = impl->frame_stride_bytes;
+  if (impl->frame.ready && impl->frame.width > 0 && impl->frame.height > 0 &&
+      impl->frame.stride_bytes > 0) {
+    layout.width = impl->frame.width;
+    layout.height = impl->frame.height;
+    layout.stride_bytes = impl->frame.stride_bytes;
   } else {
     layout = GetFrameReadbackLayoutLocked(impl);
     const size_t required_size =
         static_cast<size_t>(layout.stride_bytes) *
         static_cast<size_t>(layout.height);
-    impl->frame_rgba.assign(required_size, 0);
-    impl->frame_width = layout.width;
-    impl->frame_height = layout.height;
-    impl->frame_stride_bytes = layout.stride_bytes;
-    impl->frame_ready = true;
+    impl->frame.rgba.assign(required_size, 0);
+    impl->frame.width = layout.width;
+    impl->frame.height = layout.height;
+    impl->frame.stride_bytes = layout.stride_bytes;
+    impl->frame.ready = true;
   }
 
   const size_t required_size =
@@ -1169,10 +1187,10 @@ engine_result_t engine_read_frame_rgba(engine_handle_t handle,
         "out_pixels_size is smaller than required frame buffer size");
   }
 
-  if (impl->frame_rgba.size() < required_size) {
-    impl->frame_rgba.resize(required_size, 0);
+  if (impl->frame.rgba.size() < required_size) {
+    impl->frame.rgba.resize(required_size, 0);
   }
-  std::memcpy(out_pixels, impl->frame_rgba.data(), required_size);
+  std::memcpy(out_pixels, impl->frame.rgba.data(), required_size);
 
   ClearHandleErrorLocked(impl);
   SetThreadError(nullptr);
@@ -1320,10 +1338,10 @@ engine_result_t engine_send_input(engine_handle_t handle,
     }
   }
 
-  impl->pending_input_events.push_back(*event);
+  impl->input.pending_events.push_back(*event);
   constexpr size_t kMaxQueuedInputs = 512;
-  if (impl->pending_input_events.size() > kMaxQueuedInputs) {
-    impl->pending_input_events.pop_front();
+  if (impl->input.pending_events.size() > kMaxQueuedInputs) {
+    impl->input.pending_events.pop_front();
   }
 
   ClearHandleErrorLocked(impl);
@@ -1367,7 +1385,7 @@ engine_result_t engine_set_render_target_iosurface(engine_handle_t handle,
   if (iosurface_id == 0) {
     // Detach — revert to Pbuffer mode
     egl.DetachIOSurface();
-    impl->iosurface_attached = false;
+    impl->render.iosurface_attached = false;
     spdlog::info("engine_set_render_target_iosurface: detached, Pbuffer mode");
   } else {
     if (width == 0 || height == 0) {
@@ -1382,7 +1400,7 @@ engine_result_t engine_set_render_target_iosurface(engine_handle_t handle,
           ENGINE_RESULT_INTERNAL_ERROR,
           "failed to attach IOSurface as render target");
     }
-    impl->iosurface_attached = true;
+    impl->render.iosurface_attached = true;
     spdlog::info("engine_set_render_target_iosurface: attached id={} {}x{}",
                  iosurface_id, width, height);
 
@@ -1449,7 +1467,7 @@ engine_result_t engine_set_render_target_surface(engine_handle_t handle,
   if (native_window == nullptr) {
     // Detach — revert to Pbuffer mode
     egl.DetachNativeWindow();
-    impl->native_window_attached = false;
+    impl->render.native_window_attached = false;
     spdlog::info("engine_set_render_target_surface: detached, Pbuffer mode");
   } else {
     if (width == 0 || height == 0) {
@@ -1464,7 +1482,7 @@ engine_result_t engine_set_render_target_surface(engine_handle_t handle,
           ENGINE_RESULT_INTERNAL_ERROR,
           "failed to attach Android Surface as render target");
     }
-    impl->native_window_attached = true;
+    impl->render.native_window_attached = true;
     spdlog::info("engine_set_render_target_surface: attached {}x{}", width, height);
 
     // Update window size for the draw device
@@ -1507,8 +1525,8 @@ engine_result_t engine_get_frame_rendered_flag(engine_handle_t handle,
   }
 
   std::lock_guard<std::recursive_mutex> guard(impl->mutex);
-  *out_flag = impl->frame_rendered_this_tick ? 1 : 0;
-  impl->frame_rendered_this_tick = false;
+  *out_flag = impl->frame.rendered_this_tick ? 1 : 0;
+  impl->frame.rendered_this_tick = false;
 
   ClearHandleErrorLocked(impl);
   SetThreadError(nullptr);
@@ -1772,7 +1790,7 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
     return ENGINE_RESULT_INVALID_STATE;
   }
 
-  impl->frame_serial += 1;
+  impl->frame.serial += 1;
   impl->last_error.clear();
   SetThreadError(nullptr);
   return ENGINE_RESULT_OK;
@@ -1878,8 +1896,8 @@ engine_result_t engine_set_surface_size(engine_handle_t handle,
     return ENGINE_RESULT_INVALID_STATE;
   }
 
-  impl->surface_width = width;
-  impl->surface_height = height;
+  impl->frame.surface_width = width;
+  impl->frame.surface_height = height;
   impl->last_error.clear();
   SetThreadError(nullptr);
   return ENGINE_RESULT_OK;
@@ -1912,11 +1930,11 @@ engine_result_t engine_get_frame_desc(engine_handle_t handle,
 
   std::memset(out_frame_desc, 0, sizeof(*out_frame_desc));
   out_frame_desc->struct_size = sizeof(engine_frame_desc_t);
-  out_frame_desc->width = impl->surface_width;
-  out_frame_desc->height = impl->surface_height;
-  out_frame_desc->stride_bytes = impl->surface_width * 4u;
+  out_frame_desc->width = impl->frame.surface_width;
+  out_frame_desc->height = impl->frame.surface_height;
+  out_frame_desc->stride_bytes = impl->frame.surface_width * 4u;
   out_frame_desc->pixel_format = ENGINE_PIXEL_FORMAT_RGBA8888;
-  out_frame_desc->frame_serial = impl->frame_serial;
+  out_frame_desc->frame_serial = impl->frame.serial;
 
   impl->last_error.clear();
   SetThreadError(nullptr);
@@ -1947,8 +1965,8 @@ engine_result_t engine_read_frame_rgba(engine_handle_t handle,
   }
 
   const size_t required_size =
-      static_cast<size_t>(impl->surface_width) *
-      static_cast<size_t>(impl->surface_height) * 4u;
+      static_cast<size_t>(impl->frame.surface_width) *
+      static_cast<size_t>(impl->frame.surface_height) * 4u;
   if (out_pixels_size < required_size) {
     SetHandleErrorLocked(
         impl,
