@@ -18,16 +18,9 @@
 #define KRKR_HAS_EGL 1
 #include <EGL/egl.h>
 
-namespace krkr {
+#include "angle_backend.h"  // krkr::AngleBackend
 
-/**
- * ANGLE EGL backend type for Android platform.
- * On macOS/iOS, Metal is always used regardless of this setting.
- */
-enum class AngleBackend {
-    OpenGLES,   ///< EGL_PLATFORM_ANGLE_TYPE_OPENGLES_ANGLE (default)
-    Vulkan,     ///< EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE
-};
+namespace krkr {
 
 class EGLContextManager {
 public:
@@ -196,6 +189,14 @@ private:
     void DestroySurface();
     void DestroyIOSurfaceResources();
     void DestroyNativeWindowResources();
+
+    /**
+     * Acquire ANGLE EGL display with the specified backend.
+     * On Android, uses eglGetPlatformDisplayEXT with Vulkan → OpenGLES fallback.
+     * On other platforms, falls back to eglGetDisplay(EGL_DEFAULT_DISPLAY).
+     * Updates `backend` in-place if a fallback was triggered.
+     */
+    EGLDisplay AcquireAngleDisplay(AngleBackend& backend);
 
     EGLDisplay display_  = EGL_NO_DISPLAY;
     EGLSurface surface_  = EGL_NO_SURFACE;

@@ -44,6 +44,59 @@ EGLContextManager::~EGLContextManager() {
     Destroy();
 }
 
+// ---------------------------------------------------------------------------
+// AcquireAngleDisplay — shared EGL display acquisition logic
+// ---------------------------------------------------------------------------
+
+EGLDisplay EGLContextManager::AcquireAngleDisplay(AngleBackend& backend) {
+#if defined(__ANDROID__)
+    EGLint angleType = (backend == AngleBackend::Vulkan)
+        ? EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE
+        : EGL_PLATFORM_ANGLE_TYPE_OPENGLES_ANGLE;
+    EGL_LOGI("AcquireAngleDisplay: trying eglGetPlatformDisplayEXT backend=%s",
+             backend == AngleBackend::Vulkan ? "Vulkan" : "OpenGLES");
+    auto eglGetPlatformDisplayEXT_ =
+        reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(
+            eglGetProcAddress("eglGetPlatformDisplayEXT"));
+    EGLDisplay display = EGL_NO_DISPLAY;
+    if (eglGetPlatformDisplayEXT_) {
+        const EGLint displayAttribs[] = {
+            EGL_PLATFORM_ANGLE_TYPE_ANGLE,
+            angleType,
+            EGL_NONE
+        };
+        display = eglGetPlatformDisplayEXT_(
+            EGL_PLATFORM_ANGLE_ANGLE, EGL_DEFAULT_DISPLAY, displayAttribs);
+        EGL_LOGI("AcquireAngleDisplay: eglGetPlatformDisplayEXT returned %p", display);
+    }
+    // Fallback: if Vulkan backend failed, retry with OpenGL ES
+    if (display == EGL_NO_DISPLAY && backend == AngleBackend::Vulkan && eglGetPlatformDisplayEXT_) {
+        EGL_LOGI("AcquireAngleDisplay: Vulkan backend failed, falling back to OpenGL ES");
+        backend = AngleBackend::OpenGLES;
+        const EGLint fallbackAttribs[] = {
+            EGL_PLATFORM_ANGLE_TYPE_ANGLE,
+            EGL_PLATFORM_ANGLE_TYPE_OPENGLES_ANGLE,
+            EGL_NONE
+        };
+        display = eglGetPlatformDisplayEXT_(
+            EGL_PLATFORM_ANGLE_ANGLE, EGL_DEFAULT_DISPLAY, fallbackAttribs);
+        EGL_LOGI("AcquireAngleDisplay: fallback eglGetPlatformDisplayEXT returned %p", display);
+    }
+    if (display == EGL_NO_DISPLAY) {
+        EGL_LOGI("AcquireAngleDisplay: fallback to eglGetDisplay(EGL_DEFAULT_DISPLAY)");
+        display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+    }
+    return display;
+#else
+    (void)backend;
+    return eglGetDisplay(EGL_DEFAULT_DISPLAY);
+#endif
+}
+
+// ---------------------------------------------------------------------------
+// Initialize (Pbuffer mode)
+// ---------------------------------------------------------------------------
+
 bool EGLContextManager::Initialize(uint32_t width, uint32_t height,
                                    AngleBackend backend) {
     if (context_ != EGL_NO_CONTEXT) {
@@ -52,50 +105,7 @@ bool EGLContextManager::Initialize(uint32_t width, uint32_t height,
     }
 
     angle_backend_ = backend;
-
-    // Get the ANGLE display
-    // On Android, use eglGetPlatformDisplayEXT to get ANGLE's own EGL display
-    // instead of the system EGL display, avoiding conflicts with Flutter Impeller.
-#if defined(__ANDROID__)
-    EGLint angleType = (backend == AngleBackend::Vulkan)
-        ? EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE
-        : EGL_PLATFORM_ANGLE_TYPE_OPENGLES_ANGLE;
-    EGL_LOGI("Initialize: trying eglGetPlatformDisplayEXT(EGL_PLATFORM_ANGLE_ANGLE) backend=%s",
-             backend == AngleBackend::Vulkan ? "Vulkan" : "OpenGLES");
-    auto eglGetPlatformDisplayEXT_ =
-        reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(
-            eglGetProcAddress("eglGetPlatformDisplayEXT"));
-    if (eglGetPlatformDisplayEXT_) {
-        const EGLint displayAttribs[] = {
-            EGL_PLATFORM_ANGLE_TYPE_ANGLE,
-            angleType,
-            EGL_NONE
-        };
-        display_ = eglGetPlatformDisplayEXT_(
-            EGL_PLATFORM_ANGLE_ANGLE, EGL_DEFAULT_DISPLAY, displayAttribs);
-        EGL_LOGI("Initialize: eglGetPlatformDisplayEXT returned %p", display_);
-    }
-    // Fallback: if Vulkan backend failed, retry with OpenGL ES
-    if (display_ == EGL_NO_DISPLAY && backend == AngleBackend::Vulkan && eglGetPlatformDisplayEXT_) {
-        EGL_LOGI("Initialize: Vulkan backend failed, falling back to OpenGL ES");
-        angle_backend_ = AngleBackend::OpenGLES;
-        const EGLint fallbackAttribs[] = {
-            EGL_PLATFORM_ANGLE_TYPE_ANGLE,
-            EGL_PLATFORM_ANGLE_TYPE_OPENGLES_ANGLE,
-            EGL_NONE
-        };
-        display_ = eglGetPlatformDisplayEXT_(
-            EGL_PLATFORM_ANGLE_ANGLE, EGL_DEFAULT_DISPLAY, fallbackAttribs);
-        EGL_LOGI("Initialize: fallback eglGetPlatformDisplayEXT returned %p", display_);
-    }
-    if (display_ == EGL_NO_DISPLAY) {
-        EGL_LOGI("Initialize: fallback to eglGetDisplay(EGL_DEFAULT_DISPLAY)");
-        display_ = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-    }
-#else
-    EGL_LOGI("Initialize: eglGetDisplay(EGL_DEFAULT_DISPLAY)");
-    display_ = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-#endif
+    display_ = AcquireAngleDisplay(angle_backend_);
     if (display_ == EGL_NO_DISPLAY) {
         EGL_LOGE("eglGetDisplay failed: 0x%x", eglGetError());
         spdlog::error("eglGetDisplay failed: 0x{:x}", eglGetError());
@@ -509,45 +519,10 @@ bool EGLContextManager::InitializeWithWindow(void* window,
 
     angle_backend_ = backend;
 
-    // 1. Get EGL display — use ANGLE's platform display extension
-    //    to avoid conflicts with Flutter Impeller's system EGL
-    EGLint angleType = (backend == AngleBackend::Vulkan)
-        ? EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE
-        : EGL_PLATFORM_ANGLE_TYPE_OPENGLES_ANGLE;
-    EGL_LOGI("InitializeWithWindow: trying eglGetPlatformDisplayEXT(EGL_PLATFORM_ANGLE_ANGLE) backend=%s",
-             backend == AngleBackend::Vulkan ? "Vulkan" : "OpenGLES");
-    auto eglGetPlatformDisplayEXT_ =
-        reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(
-            eglGetProcAddress("eglGetPlatformDisplayEXT"));
-    if (eglGetPlatformDisplayEXT_) {
-        const EGLint displayAttribs[] = {
-            EGL_PLATFORM_ANGLE_TYPE_ANGLE,
-            angleType,
-            EGL_NONE
-        };
-        display_ = eglGetPlatformDisplayEXT_(
-            EGL_PLATFORM_ANGLE_ANGLE, EGL_DEFAULT_DISPLAY, displayAttribs);
-        EGL_LOGI("InitializeWithWindow: eglGetPlatformDisplayEXT returned %p", display_);
-    }
-    // Fallback: if Vulkan backend failed, retry with OpenGL ES
-    if (display_ == EGL_NO_DISPLAY && backend == AngleBackend::Vulkan && eglGetPlatformDisplayEXT_) {
-        EGL_LOGI("InitializeWithWindow: Vulkan backend failed, falling back to OpenGL ES");
-        angle_backend_ = AngleBackend::OpenGLES;
-        const EGLint fallbackAttribs[] = {
-            EGL_PLATFORM_ANGLE_TYPE_ANGLE,
-            EGL_PLATFORM_ANGLE_TYPE_OPENGLES_ANGLE,
-            EGL_NONE
-        };
-        display_ = eglGetPlatformDisplayEXT_(
-            EGL_PLATFORM_ANGLE_ANGLE, EGL_DEFAULT_DISPLAY, fallbackAttribs);
-        EGL_LOGI("InitializeWithWindow: fallback eglGetPlatformDisplayEXT returned %p", display_);
-    }
+    // 1. Get EGL display — shared logic with Vulkan → OpenGLES fallback
+    display_ = AcquireAngleDisplay(angle_backend_);
     if (display_ == EGL_NO_DISPLAY) {
-        EGL_LOGI("InitializeWithWindow: fallback to eglGetDisplay");
-        display_ = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-    }
-    if (display_ == EGL_NO_DISPLAY) {
-        EGL_LOGE("InitializeWithWindow: eglGetDisplay failed: 0x%x", eglGetError());
+        EGL_LOGE("InitializeWithWindow: AcquireAngleDisplay failed: 0x%x", eglGetError());
         return false;
     }
 

@@ -10,7 +10,7 @@
 
 #include <cstdint>
 #include <string>
-#include "krkr_egl_context.h"  // for krkr::AngleBackend
+#include "angle_backend.h"  // for krkr::AngleBackend
 
 class TVPEngineBootstrap {
 public:
