@@ -1819,7 +1819,7 @@ tTVPWaveSoundBufferDecodeThread::~tTVPWaveSoundBufferDecodeThread() {
     Running = false;
     Terminate();
     Resume();
-    // Event.Set();
+    Event.Set();
     WaitFor();
 }
 //---------------------------------------------------------------------------
@@ -1833,7 +1833,7 @@ void tTVPWaveSoundBufferDecodeThread::Execute() {
             bool wait;
             DWORD et;
 
-            if(Running) {
+            if(Running && !GetTerminated()) {
                 volatile tTJSCriticalSectionHolder cs_holder(OneLoopCS);
                 wait = !Owner->FillL2Buffer(false, true); // fill
             }
