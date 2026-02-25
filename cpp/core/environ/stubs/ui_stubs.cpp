@@ -27,6 +27,7 @@
 #include "Application.h"
 #include "RenderManager.h"
 #include "krkr_egl_context.h"
+#include "SysInitImpl.h"
 
 #include <GLES3/gl3.h>
 
@@ -645,8 +646,14 @@ static std::vector<std::string> s_appHomeDirs;
 
 const std::vector<std::string> &TVPGetApplicationHomeDirectory() {
     if (s_appHomeDirs.empty()) {
-        // Use current working directory as default
-        s_appHomeDirs.push_back(std::filesystem::current_path().string() + "/");
+        if (!TVPNativeProjectDir.IsEmpty()) {
+            std::string dir = TVPNativeProjectDir.AsNarrowStdString();
+            while (!dir.empty() && dir.back() == '/')
+                dir.pop_back();
+            s_appHomeDirs.push_back(dir);
+        } else {
+            s_appHomeDirs.push_back(std::filesystem::current_path().string());
+        }
     }
     return s_appHomeDirs;
 }

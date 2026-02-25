@@ -14,6 +14,10 @@
 #include <algorithm>
 #include <functional>
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 #include "tjsUtils.h"
 #include "SysInitIntf.h"
 #include "ScriptMgnIntf.h"
@@ -32,12 +36,7 @@ extern void TVPGL_C_Init();
 // TVPSystemInit : Entire System Initialization
 //---------------------------------------------------------------------------
 void TVPSystemInit() {
-#if CC_TARGET_PLATFORM != CC_PLATFORM_WIN32
-#ifndef CC_TARGET_OS_IPHONE
-    if(!TVPProtectInit())
-        return;
-#endif
-// #else
+#ifdef _WIN32
 #ifdef USING_PROTECT
     while(!TVPProtectInit()) {
         TVPUpdateLicense();

@@ -320,7 +320,11 @@ static int _utf8_strcasecmp_nfc(const char *a, const char *b) {
 }
 #endif
 
-#if CC_TARGET_PLATFORM == CC_PLATFORM_IOS
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
+#if defined(__APPLE__) && TARGET_OS_IPHONE
 const std::vector<std::string> &TVPGetApplicationHomeDirectory();
 const std::vector<ttstr> &_getPrefixPath() {
     static std::vector<ttstr> ret;
@@ -340,7 +344,7 @@ const std::vector<std::string> &_getHomeDir() {
     }
     return ret;
 }
-#endif
+#endif // TARGET_OS_IPHONE
 
 //---------------------------------------------------------------------------
 void tTVPFileMedia::GetLocallyAccessibleName(ttstr &name) {
@@ -411,14 +415,16 @@ void tTVPFileMedia::GetLocallyAccessibleName(ttstr &name) {
         ptr += 2; // skip "./"
         newname.Clear();
     }
-#if CC_TARGET_PLATFORM == CC_PLATFORM_IOS
+#if defined(__APPLE__) && TARGET_OS_IPHONE
     {
         std::string prefix = "/";
         prefix += tTJSNarrowStringHolder(ptr).Buf;
         static const std::vector<ttstr> &prefixPath = _getPrefixPath();
         static const std::vector<std::string> &homeDir = _getHomeDir();
-        for(int i = 0; i < prefixPath.size(); ++i) {
+        spdlog::debug("iOS GetLocallyAccessibleName: prefix='{}', homeDir count={}", prefix, homeDir.size());
+        for(int i = 0; i < (int)prefixPath.size(); ++i) {
             const std::string &dir = homeDir[i];
+            spdlog::debug("  homeDir[{}]='{}' prefixPath[{}]='{}'", i, dir, i, prefixPath[i].AsNarrowStdString());
             if(prefix.length() < dir.length())
                 continue;
             std::string actualPrefix = prefix.substr(0, dir.length());
@@ -427,6 +433,7 @@ void tTVPFileMedia::GetLocallyAccessibleName(ttstr &name) {
                 ptr += prefixPath[i].length();
                 while(*ptr && *ptr == TJS_W('/'))
                     ++ptr;
+                spdlog::debug("  iOS prefix matched! newname='{}', remaining ptr='{}'", newname.AsNarrowStdString(), tTJSNarrowStringHolder(ptr).Buf);
                 break;
             }
         }
