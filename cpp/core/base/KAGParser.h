@@ -247,10 +247,15 @@ private:
         tjs_int IfLevel;
         ttstr Exp;
         ttstr Each;
+        bool WasLineBufferUsing;
+        ttstr SavedLineBuffer;
         tWhileStackData(tjs_int line, tjs_int pos, tjs_int prevExcludeLevel,
-                        tjs_int ifLevel, const ttstr &exp, const ttstr &each) :
+                        tjs_int ifLevel, const ttstr &exp, const ttstr &each,
+                        bool wasLineBufferUsing, const ttstr &savedLineBuffer) :
             Line(line), Pos(pos), PrevExcludeLevel(prevExcludeLevel),
-            IfLevel(ifLevel), Exp(exp), Each(each) {}
+            IfLevel(ifLevel), Exp(exp), Each(each),
+            WasLineBufferUsing(wasLineBufferUsing),
+            SavedLineBuffer(savedLineBuffer) {}
     };
     std::vector<tWhileStackData> WhileStack;
 

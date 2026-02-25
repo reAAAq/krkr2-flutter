@@ -1967,7 +1967,9 @@ parse_start:
                     IfLevel++;
                     WhileStack.push_back(tWhileStackData(nextLine, nextPos,
                                                          ExcludeLevel, IfLevel,
-                                                         exp, each));
+                                                         exp, each,
+                                                         LineBufferUsing,
+                                                         LineBuffer));
 
                     if(ExcludeLevel == -1) {
                         DicObj->PropGet(0, TJS_W("init"), nullptr, &val,
@@ -2006,8 +2008,14 @@ parse_start:
                     if(loop_again) {
                         CurLine = data.Line;
                         CurPos = data.Pos;
-                        CurLineStr = Lines[CurLine].Start;
-                        LineBufferUsing = false;
+                        if(data.WasLineBufferUsing) {
+                            LineBuffer = data.SavedLineBuffer;
+                            CurLineStr = LineBuffer.c_str();
+                            LineBufferUsing = true;
+                        } else {
+                            CurLineStr = Lines[CurLine].Start;
+                            LineBufferUsing = false;
+                        }
                         ExcludeLevel = -1;
                         goto parse_start;
                     }
@@ -2037,8 +2045,14 @@ parse_start:
                         if(loop_again) {
                             CurLine = data.Line;
                             CurPos = data.Pos;
-                            CurLineStr = Lines[CurLine].Start;
-                            LineBufferUsing = false;
+                            if(data.WasLineBufferUsing) {
+                                LineBuffer = data.SavedLineBuffer;
+                                CurLineStr = LineBuffer.c_str();
+                                LineBufferUsing = true;
+                            } else {
+                                CurLineStr = Lines[CurLine].Start;
+                                LineBufferUsing = false;
+                            }
                             goto parse_start;
                         }
                     }
