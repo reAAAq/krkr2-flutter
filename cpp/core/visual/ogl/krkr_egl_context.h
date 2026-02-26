@@ -175,6 +175,11 @@ public:
         return true;
     }
 
+    /**
+     * Peek at the dirty flag without consuming it.
+     */
+    bool IsFrameDirty() const { return frame_dirty_; }
+
     // Accessors
     uint32_t GetWidth()   const { return width_; }
     uint32_t GetHeight()  const { return height_; }
