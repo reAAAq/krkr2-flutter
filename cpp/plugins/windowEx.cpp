@@ -960,12 +960,14 @@ NCB_ATTACH_CLASS_WITH_HOOK(WindowEx, Window) {
 
     RawCallback(TJS_W("minimize"), &Class::minimize, 0);
     RawCallback(TJS_W("maximize"), &Class::maximize, 0);
-    // RawCallback(TJS_W("maximizeBox"), &Class::getMaximizeBox,
-    // &Class::setMaximizeBox, 0); RawCallback(TJS_W("minimizeBox"),
-    // &Class::getMinimizeBox,      &Class::setMinimizeBox, 0);
-    // RawCallback(TJS_W("maximized"),           &Class::getMaximized,
-    // &Class::setMaximized, 0); RawCallback(TJS_W("minimized"),
-    // &Class::getMinimized,      &Class::setMinimized, 0);
+    RawCallback(TJS_W("maximizeBox"), &Class::getMaximizeBox,
+                &Class::setMaximizeBox, 0);
+    RawCallback(TJS_W("minimizeBox"), &Class::getMinimizeBox,
+                &Class::setMinimizeBox, 0);
+    RawCallback(TJS_W("maximized"), &Class::getMaximized,
+                &Class::setMaximized, 0);
+    RawCallback(TJS_W("minimized"), &Class::getMinimized,
+                &Class::setMinimized, 0);
     RawCallback(TJS_W("showRestore"), &Class::showRestore, 0);
     RawCallback(TJS_W("resetWindowIcon"), &Class::resetWindowIcon, 0);
     RawCallback(TJS_W("setWindowIcon"), &Class::setWindowIcon, 0);
