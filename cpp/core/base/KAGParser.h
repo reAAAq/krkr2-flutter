@@ -327,7 +327,8 @@ public:
 
 private:
     bool EntryParam(bool &condition, const ttstr &attribname, const ttstr &value,
-                    bool entity, bool macroarg, bool allowParamMacro);
+                    bool entity, bool macroarg, bool allowParamMacro,
+                    int recursionDepth = 0);
 
 private:
     iTJSDispatch2 *_GetNextTag();

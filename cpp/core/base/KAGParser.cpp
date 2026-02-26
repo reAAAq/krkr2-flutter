@@ -1411,12 +1411,14 @@ void tTJSNI_KAGParser::ClearCallStack() {
 
 bool tTJSNI_KAGParser::EntryParam(bool &condition, const ttstr &attribname,
                                   const ttstr &value, bool entity,
-                                  bool macroarg, bool allowParamMacro) {
+                                  bool macroarg, bool allowParamMacro,
+                                  int recursionDepth) {
+    static const int kMaxParamMacroDepth = 64;
     static ttstr __name_name(TJSMapGlobalStringMap(TJS_W("name")));
     static ttstr __tag_name(TJSMapGlobalStringMap(TJS_W("tagname")));
 
     tTJSVariant paramMacroValue;
-    if(allowParamMacro &&
+    if(allowParamMacro && recursionDepth < kMaxParamMacroDepth &&
        TJS_SUCCEEDED(ParamMacros->PropGet(0, attribname.c_str(), nullptr,
                                           &paramMacroValue, ParamMacros)) &&
        paramMacroValue.Type() == tvtObject) {
@@ -1448,7 +1450,8 @@ bool tTJSNI_KAGParser::EntryParam(bool &condition, const ttstr &attribname,
                     macroParam = p + 1;
                 }
 
-                if(EntryParam(condition, name, macroParam, e, m, true)) {
+                if(EntryParam(condition, name, macroParam, e, m, true,
+                             recursionDepth + 1)) {
                     DicObj->PropSetByVS(TJS_MEMBERENSURE,
                                         name.AsVariantStringNoAddRef(),
                                         &ValueVariant, DicObj);
