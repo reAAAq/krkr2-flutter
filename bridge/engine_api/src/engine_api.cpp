@@ -1117,6 +1117,14 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
   if (::Application) {
     ::Application->Run();
   }
+
+  // Peek the dirty flag BEFORE TVPDrawSceneOnce, because on Android
+  // TVPForceSwapBuffer() (called inside TVPDrawSceneOnce) consumes
+  // the dirty flag via ConsumeFrameDirty().  We need to know whether
+  // UpdateDrawBuffer() was called this tick for frame tracking below.
+  auto& egl_tick = krkr::GetEngineEGLContext();
+  const bool frame_was_dirty = egl_tick.IsFrameDirty();
+
   ::TVPDrawSceneOnce(0);
 
   // Process deferred texture deletions. iTVPTexture2D::Release() uses
@@ -1134,19 +1142,22 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
         "runtime requested termination");
   }
 
-  // Mark that a frame was rendered this tick (for IOSurface mode notification)
-  impl->frame.rendered_this_tick = true;
+  // Clear the dirty flag for paths where TVPForceSwapBuffer didn't
+  // already consume it (IOSurface, Pbuffer).
+  egl_tick.ConsumeFrameDirty();
 
-  // In IOSurface mode, the engine renders directly to the shared IOSurface
-  // via the FBO — no need for glReadPixels. Skip the expensive readback.
   if (impl->render.native_window_attached) {
     // Android WindowSurface mode — TVPForceSwapBuffer() (called by
     // TVPDrawSceneOnce above) already performed eglSwapBuffers to deliver
     // the frame to Flutter's SurfaceTexture. Just update frame tracking.
-    impl->frame.serial += 1;
-    impl->frame.ready = true;
+    impl->frame.rendered_this_tick = frame_was_dirty;
+    if (frame_was_dirty) {
+      impl->frame.serial += 1;
+      impl->frame.ready = true;
+    }
   } else if (!impl->render.iosurface_attached) {
     // Legacy Pbuffer readback path (slow, for backward compatibility)
+    impl->frame.rendered_this_tick = true;
     const FrameReadbackLayout layout = GetFrameReadbackLayoutLocked(impl);
     const size_t required_size =
         static_cast<size_t>(layout.stride_bytes) *
@@ -1171,11 +1182,12 @@ engine_result_t engine_tick(engine_handle_t handle, uint32_t delta_ms) {
       impl->frame.serial += 1;
     }
   } else {
-    // IOSurface mode — just increment frame serial, no readback needed.
-    // The render output is already in the shared IOSurface.
-    glFlush(); // Ensure GPU commands are submitted
-    impl->frame.serial += 1;
-    impl->frame.ready = true;
+    // IOSurface mode — only update tracking when content changed.
+    impl->frame.rendered_this_tick = frame_was_dirty;
+    if (frame_was_dirty) {
+      impl->frame.serial += 1;
+      impl->frame.ready = true;
+    }
   }
 
   ClearHandleErrorLocked(impl);
