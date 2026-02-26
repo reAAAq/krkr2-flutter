@@ -35,22 +35,6 @@ The screenshot below shows the current running state on macOS with the Metal bac
 
 **Rendering Pipeline**: The engine performs offscreen rendering via ANGLE's EGL Pbuffer Surface (OpenGL ES 2.0). Rendered frames are delivered to the Flutter Texture Widget through platform-native texture sharing mechanisms (macOS → IOSurface, Windows → D3D11 Texture, Linux → DMA-BUF) with zero-copy transfer.
 
-### Project Structure
-
-```
-krkr2/
-├── apps/flutter_app/        # Flutter main app (Dart UI + debug console)
-├── bridge/
-│   ├── engine_api/          # C/C++ shared library, exports engine API (engine_create/tick/destroy, etc.)
-│   └── flutter_engine_bridge/  # Flutter Plugin wrapping Platform Channel and Texture bridge
-├── cpp/
-│   ├── core/                # KiriKiri2 core engine source
-│   ├── plugins/             # KiriKiri2 plugins
-│   └── external/            # Third-party C++ libraries (ANGLE, etc.)
-├── vcpkg/                   # vcpkg overlay ports & triplets
-├── scripts/                 # Build helper scripts
-└── tools/                   # Utilities (xp3 unpacker, etc.)
-```
 
 ## Development Progress
 
@@ -66,15 +50,15 @@ krkr2/
 | Flutter Debug UI | ✅ Mostly Done | FPS control, engine lifecycle management, rendering status monitor |
 | Input Event Forwarding | ✅ Mostly Done | Mouse / touch event coordinate mapping and forwarding to the engine |
 | Engine Performance Optimization | 🔨 In Progress | SIMD pixel blending, GPU compositing pipeline, VM interpreter optimization, etc. |
+| Game Compatibility | 🔨 In Progress | Completing the script parser, adding plugins (KAG parser fixes, window property stubs, message box implementation, etc.). Current goal: match compatibility with Z's closed-source build |
 | Original krkr2 Emulator Feature Porting | 📋 Planned | Gradually port original krkr2 emulator features to the new architecture |
-| Game Compatibility Testing | 📋 Planned | Pending stable multi-platform rendering |
 
 ## Platform Support
 
 | Platform | Status | Graphics Backend | Texture Sharing |
 |----------|--------|-----------------|----------------|
 | macOS | ✅ Mostly Done | Metal | IOSurface |
-| iOS | 🔨 In Progress | Metal | IOSurface |
+| iOS | 🔨 Pipeline Working, Optimizing OpenGL Rendering | Metal | IOSurface |
 | Windows | 📋 Planned | Direct3D 11 | D3D11 Texture |
 | Linux | 📋 Planned | Vulkan / Desktop GL | DMA-BUF |
 | Android | 🔨 Pipeline Working, Optimizing | OpenGL ES / Vulkan | HardwareBuffer |

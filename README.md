@@ -35,22 +35,6 @@
 
 **渲染管线**：引擎通过 ANGLE 的 EGL Pbuffer Surface 进行离屏渲染（OpenGL ES 2.0），渲染结果通过平台原生纹理共享机制（macOS → IOSurface、Windows → D3D11 Texture、Linux → DMA-BUF）零拷贝传递给 Flutter Texture Widget 显示。
 
-### 项目目录结构
-
-```
-krkr2/
-├── apps/flutter_app/        # Flutter 主应用 (Dart UI + 调试控制台)
-├── bridge/
-│   ├── engine_api/          # C/C++ 共享库，导出引擎 API (engine_create/tick/destroy 等)
-│   └── flutter_engine_bridge/  # Flutter Plugin，封装 Platform Channel 和 Texture 桥接
-├── cpp/
-│   ├── core/                # KiriKiri2 核心引擎源码
-│   ├── plugins/             # KiriKiri2 插件
-│   └── external/            # 第三方 C++ 库 (ANGLE 等)
-├── vcpkg/                   # vcpkg overlay ports & triplets
-├── scripts/                 # 构建辅助脚本
-└── tools/                   # 辅助工具 (xp3 解包等)
-```
 
 ## 开发进度
 
@@ -66,15 +50,15 @@ krkr2/
 | Flutter 调试 UI | ✅ 基本完成 | FPS 控制、引擎生命周期管理、渲染状态监控 |
 | 输入事件转发 | ✅ 基本完成 | 鼠标 / 触控事件坐标映射转发到引擎 |
 | 引擎性能优化 | 🔨 进行中 | SIMD 像素混合、GPU 合成管线、VM 解释器优化等 |
+| 游戏兼容性优化 | 🔨 进行中 | 补全解析引擎、添加插件（KAG 脚本解析修复、窗口属性补全、弹窗系统实现等），阶段目标与 Z 大闭源版兼容性持平 |
 | 原有 krkr2 模拟器功能移植 | 📋 规划中 | 将原有 krkr2 模拟器功能逐步移植到新架构 |
-| 游戏兼容性测试 | 📋 计划中 | 待多平台渲染稳定后进行 |
 
 ## 平台支持状态
 
 | 平台 | 状态 | 图形后端 | 纹理共享机制 |
 |------|------|----------|-------------|
 | macOS | ✅ 基本完成 | Metal | IOSurface |
-| iOS | 🔨 进行中 | Metal | IOSurface |
+| iOS | 🔨 流程打通，正在优化和修复 OpenGL 渲染 | Metal | IOSurface |
 | Windows | 📋 计划中 | Direct3D 11 | D3D11 Texture |
 | Linux | 📋 计划中 | Vulkan / Desktop GL | DMA-BUF |
 | Android | 🔨 流程跑通，优化中 | OpenGL ES / Vulkan | HardwareBuffer |
