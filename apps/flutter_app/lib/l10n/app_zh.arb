@@ -99,6 +99,8 @@
   "resume": "继续",
   "exitGame": "退出游戏",
   "selectGameDirectory": "选择游戏目录",
+  "selectGameArchive": "选择 XP3 文件",
+  "addArchive": "添加 XP3",
 
   "justNow": "刚刚",
   "minutesAgo": "{count} 分钟前",

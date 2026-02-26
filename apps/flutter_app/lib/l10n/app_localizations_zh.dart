@@ -273,6 +273,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get selectGameDirectory => '选择游戏目录';
 
   @override
+  String get selectGameArchive => '选择 XP3 文件';
+
+  @override
+  String get addArchive => '添加 XP3';
+
+  @override
   String get justNow => '刚刚';
 
   @override

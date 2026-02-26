@@ -152,7 +152,7 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
   /// we step up one level to the real game root — but ONLY if the
   /// parent directory has `startup.tjs` or `data/` pointing back here.
   Future<String> _adjustGamePathForAndroid(String path) async {
-    if (!Platform.isAndroid) return path;
+    if (!Platform.isAndroid || _isArchivePath(path)) return path;
 
     final clean = path.endsWith('/')
         ? path.substring(0, path.length - 1)
@@ -206,8 +206,24 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
     return adjusted;
   }
 
+  static bool _isArchivePath(String path) {
+    final lower = path.toLowerCase();
+    return lower.endsWith('.xp3') ||
+        lower.endsWith('.zip') ||
+        lower.endsWith('.7z') ||
+        lower.endsWith('.tar');
+  }
+
   Future<String?> _preflightGamePath(String path) async {
     try {
+      if (_isArchivePath(path)) {
+        final file = File(path);
+        if (!await file.exists()) {
+          return 'Archive file does not exist: $path';
+        }
+        return null;
+      }
+
       final dir = Directory(path);
       if (!await dir.exists()) {
         return 'Game path does not exist: $path';

@@ -610,6 +610,18 @@ abstract class AppLocalizations {
   /// **'Select Game Directory'**
   String get selectGameDirectory;
 
+  /// No description provided for @selectGameArchive.
+  ///
+  /// In en, this message translates to:
+  /// **'Select XP3 Archive'**
+  String get selectGameArchive;
+
+  /// No description provided for @addArchive.
+  ///
+  /// In en, this message translates to:
+  /// **'Add XP3'**
+  String get addArchive;
+
   /// No description provided for @justNow.
   ///
   /// In en, this message translates to:

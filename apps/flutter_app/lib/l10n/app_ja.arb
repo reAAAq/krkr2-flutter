@@ -99,6 +99,8 @@
   "resume": "再開",
   "exitGame": "ゲームを終了",
   "selectGameDirectory": "ゲームディレクトリを選択",
+  "selectGameArchive": "XP3 ファイルを選択",
+  "addArchive": "XP3 追加",
 
   "justNow": "たった今",
   "minutesAgo": "{count}分前",

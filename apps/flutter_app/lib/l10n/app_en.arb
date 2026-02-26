@@ -119,6 +119,8 @@
   "resume": "Resume",
   "exitGame": "Exit Game",
   "selectGameDirectory": "Select Game Directory",
+  "selectGameArchive": "Select XP3 Archive",
+  "addArchive": "Add XP3",
 
   "justNow": "just now",
   "minutesAgo": "{count} min ago",

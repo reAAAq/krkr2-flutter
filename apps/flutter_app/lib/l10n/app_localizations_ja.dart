@@ -275,6 +275,12 @@ class AppLocalizationsJa extends AppLocalizations {
   String get selectGameDirectory => 'ゲームディレクトリを選択';
 
   @override
+  String get selectGameArchive => 'XP3 ファイルを選択';
+
+  @override
+  String get addArchive => 'XP3 追加';
+
+  @override
   String get justNow => 'たった今';
 
   @override

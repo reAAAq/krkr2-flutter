@@ -283,6 +283,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get selectGameDirectory => 'Select Game Directory';
 
   @override
+  String get selectGameArchive => 'Select XP3 Archive';
+
+  @override
+  String get addArchive => 'Add XP3';
+
+  @override
   String get justNow => 'just now';
 
   @override

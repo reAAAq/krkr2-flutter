@@ -422,7 +422,22 @@ engine_result_t OpenGameCore(engine_handle_t handle,
   EnsureRuntimeLoggersInitialized();
 
   std::string normalized_game_root_path(game_root_path_utf8);
-  if (!normalized_game_root_path.empty() &&
+  // Only append trailing slash for directory paths.  Archive files
+  // (.xp3, .zip, etc.) must keep their original extension so the
+  // storage system can recognise them as archives.
+  auto ends_with = [](const std::string &s, const std::string &suffix) {
+    return s.size() >= suffix.size() &&
+           s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
+  };
+  const bool looks_like_archive =
+      ends_with(normalized_game_root_path, ".xp3") ||
+      ends_with(normalized_game_root_path, ".XP3") ||
+      ends_with(normalized_game_root_path, ".zip") ||
+      ends_with(normalized_game_root_path, ".ZIP") ||
+      ends_with(normalized_game_root_path, ".7z")  ||
+      ends_with(normalized_game_root_path, ".tar");
+  if (!looks_like_archive &&
+      !normalized_game_root_path.empty() &&
       normalized_game_root_path.back() != '/' &&
       normalized_game_root_path.back() != '\\') {
     normalized_game_root_path.push_back('/');

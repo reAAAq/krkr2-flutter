@@ -198,6 +198,40 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<void> _addGameArchive() async {
+    final l10n = AppLocalizations.of(context)!;
+    final result = await FilePicker.platform.pickFiles(
+      dialogTitle: l10n.selectGameArchive,
+      type: FileType.custom,
+      allowedExtensions: ['xp3', 'XP3'],
+      allowMultiple: true,
+    );
+    if (result == null || result.files.isEmpty || !mounted) return;
+
+    int addedCount = 0;
+    for (final file in result.files) {
+      final filePath = file.path;
+      if (filePath == null) continue;
+      final game = GameInfo(path: filePath);
+      if (await _gameManager.addGame(game)) {
+        addedCount++;
+      }
+    }
+    if (mounted) {
+      if (addedCount > 0) {
+        setState(() {});
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.gameAlreadyExists(
+                result.files.first.name)),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
   void _showIosImportGuide() {
     final l10n = AppLocalizations.of(context)!;
     showDialog<void>(
@@ -513,10 +547,23 @@ class _HomePageState extends State<HomePage> {
                 ),
               ],
             )
-          : FloatingActionButton.extended(
-              onPressed: _addGame,
-              icon: const Icon(Icons.add),
-              label: Text(l10n.addGame),
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FloatingActionButton.extended(
+                  heroTag: 'addDir',
+                  onPressed: _addGame,
+                  icon: const Icon(Icons.folder_open),
+                  label: Text(l10n.addGame),
+                ),
+                const SizedBox(width: 12),
+                FloatingActionButton.extended(
+                  heroTag: 'addXp3',
+                  onPressed: _addGameArchive,
+                  icon: const Icon(Icons.archive),
+                  label: Text(l10n.addArchive),
+                ),
+              ],
             ),
     );
   }
