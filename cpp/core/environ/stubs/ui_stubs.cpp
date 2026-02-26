@@ -176,12 +176,20 @@ public:
 
         if (nativeGLTex != 0) {
             // GPU fast-path: the composited scene is already in a GL texture.
-            // We must detach it from the engine's FBO first to avoid
-            // sampling a texture that is still an FBO attachment.
-            // TVPSetRenderTarget(0) will unbind any texture from the engine FBO.
-            extern void TVPSetRenderTarget(GLuint);
-
-            TVPSetRenderTarget(0);
+            // The texture is attached to the engine's internal _FBO as its
+            // color attachment, but we will bind a DIFFERENT FBO (the
+            // IOSurface FBO) before sampling it, so there is no feedback
+            // loop.  Binding the IOSurface FBO via BindRenderTarget() will
+            // end the current render pass on _FBO and store its results,
+            // making the composited content available for sampling.
+            //
+            // We intentionally do NOT call TVPSetRenderTarget(0) here.
+            // That call would bind an intermediate FBO 0, causing ANGLE's
+            // Metal backend to create an extra (empty) render pass
+            // transition.  On iOS this transition can briefly expose the
+            // IOSurface in an intermediate state, producing visible flicker.
+            // _RestoreGLStatues() (called later by TVPDrawSceneOnce) will
+            // handle the TVPSetRenderTarget(0) reset.
             blitSrcTexture = static_cast<GLuint>(nativeGLTex);
         } else {
             // CPU fallback: read pixel data and upload to our blit texture.
@@ -338,14 +346,17 @@ public:
         glUseProgram(0);
         glBindTexture(GL_TEXTURE_2D, 0);
 
-        // In IOSurface/WindowSurface mode, glFlush() is sufficient —
-        // IOSurface has GPU-GPU sync, and WindowSurface (SurfaceTexture)
-        // is synchronized by eglSwapBuffers in TVPForceSwapBuffer.
-        // In Pbuffer mode, glFinish() is required because the legacy
-        // path uses glReadPixels which needs GPU to be done.
-        if (egl.HasIOSurface() || egl.HasNativeWindow()) {
+        if (egl.HasNativeWindow()) {
+            // Android WindowSurface: glFlush is sufficient because
+            // eglSwapBuffers (in TVPForceSwapBuffer) provides sync.
             glFlush();
         } else {
+            // IOSurface and Pbuffer modes: glFinish() ensures the GPU
+            // has fully written the frame before the CPU returns.
+            // For IOSurface this is critical — ANGLE's Metal backend
+            // and Flutter's Metal renderer use separate command queues;
+            // glFlush() only submits commands without waiting, so
+            // Flutter may read a partially-rendered IOSurface.
             glFinish();
         }
 
