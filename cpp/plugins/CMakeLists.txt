@@ -23,6 +23,11 @@ target_sources(${PROJECT_NAME} PUBLIC
     extrans.cpp
     textrender.cpp
     alphamovie.cpp
+    layerExBTOA.cpp
+    layerExImage.cpp
+    layerExRaster.cpp
+    layerExAreaAverage.cpp
+    layerExLongExposure.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC
