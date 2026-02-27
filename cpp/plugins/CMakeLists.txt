@@ -20,6 +20,9 @@ target_sources(${PROJECT_NAME} PUBLIC
     fftgraph.cpp
     LayerExBase.cpp
     xp3filter.cpp
+    extrans.cpp
+    textrender.cpp
+    alphamovie.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC
