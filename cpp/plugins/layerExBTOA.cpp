@@ -63,14 +63,30 @@ GetLayerSize(iTJSDispatch2 *lay, tjs_int32 &w, tjs_int32 &h, tjs_int32 &pitch) {
 static bool
 GetLayerBufferAndSize(iTJSDispatch2 *lay, tjs_int32 &w, tjs_int32 &h, WrtRefT &ptr, tjs_int32 &pitch) {
     iTJSDispatch2 *layerClass = getLayerClass();
-    if (!GetLayerSize(lay, w, h, pitch))
+    if (!lay || TJS_FAILED(lay->IsInstanceOf(0, 0, 0, TJS_W("Layer"), lay)))
         return false;
 
     tTJSVariant val;
+    if (TJS_FAILED(layerClass->PropGet(0, TJS_W("hasImage"), &hasImageHint, &val, lay)) ||
+        (val.AsInteger() == 0))
+        return false;
+    if (TJS_FAILED(layerClass->PropGet(0, TJS_W("imageWidth"), &imageWidthHint, &val, lay)))
+        return false;
+    w = (tjs_int32)val.AsInteger();
+    if (TJS_FAILED(layerClass->PropGet(0, TJS_W("imageHeight"), &imageHeightHint, &val, lay)))
+        return false;
+    h = (tjs_int32)val.AsInteger();
+
     if (TJS_FAILED(layerClass->PropGet(0, TJS_W("mainImageBufferForWrite"), &mainImageBufferForWriteHint, &val, lay)))
         return false;
     ptr = reinterpret_cast<WrtRefT>(val.AsInteger());
-    return (ptr != 0);
+    if (ptr == 0) return false;
+
+    if (TJS_FAILED(layerClass->PropGet(0, TJS_W("mainImageBufferPitch"), &mainImageBufferPitchHint, &val, lay)))
+        return false;
+    pitch = (tjs_int32)val.AsInteger();
+
+    return (w > 0 && h > 0 && pitch != 0);
 }
 
 static bool
@@ -108,18 +124,39 @@ static bool
 GetClipBufferAndSize(iTJSDispatch2 *lay, tjs_int32 &l, tjs_int32 &t, tjs_int32 &w, tjs_int32 &h,
                      WrtRefT &ptr, tjs_int32 &pitch) {
     iTJSDispatch2 *layerClass = getLayerClass();
-    if (!GetClipSize(lay, l, t, w, h, pitch))
+    if (!lay || TJS_FAILED(lay->IsInstanceOf(0, 0, 0, TJS_W("Layer"), lay)))
         return false;
 
     tTJSVariant val;
+    if (TJS_FAILED(layerClass->PropGet(0, TJS_W("hasImage"), &hasImageHint, &val, lay)) ||
+        (val.AsInteger() == 0))
+        return false;
+
+    if (TJS_FAILED(layerClass->PropGet(0, TJS_W("clipLeft"), &clipLeftHint, &val, lay)))
+        return false;
+    l = (tjs_int32)val.AsInteger();
+    if (TJS_FAILED(layerClass->PropGet(0, TJS_W("clipTop"), &clipTopHint, &val, lay)))
+        return false;
+    t = (tjs_int32)val.AsInteger();
+    if (TJS_FAILED(layerClass->PropGet(0, TJS_W("clipWidth"), &clipWidthHint, &val, lay)))
+        return false;
+    w = (tjs_int32)val.AsInteger();
+    if (TJS_FAILED(layerClass->PropGet(0, TJS_W("clipHeight"), &clipHeightHint, &val, lay)))
+        return false;
+    h = (tjs_int32)val.AsInteger();
+
     if (TJS_FAILED(layerClass->PropGet(0, TJS_W("mainImageBufferForWrite"), &mainImageBufferForWriteHint, &val, lay)))
         return false;
     ptr = reinterpret_cast<WrtRefT>(val.AsInteger());
-    if (ptr != 0) {
-        ptr += pitch * t + l * 4;
-        return true;
-    }
-    return false;
+    if (ptr == 0) return false;
+
+    if (TJS_FAILED(layerClass->PropGet(0, TJS_W("mainImageBufferPitch"), &mainImageBufferPitchHint, &val, lay)))
+        return false;
+    pitch = (tjs_int32)val.AsInteger();
+    if (w <= 0 || h <= 0 || pitch == 0) return false;
+
+    ptr += pitch * t + l * 4;
+    return true;
 }
 
 // ---------- copyRightBlueToLeftAlpha ----------
@@ -324,6 +361,10 @@ static inline iTJSDispatch2 *GetSrcDstLayerInfo(
     else dbuf = reinterpret_cast<WrtRefT>(val.AsInteger());
 
     if (!sbuf || !dbuf) TVPThrowExceptionMessage(TJS_W("Layer has no images."));
+
+    if (TJS_FAILED(layerClass->PropGet(0, TJS_W("mainImageBufferPitch"), &mainImageBufferPitchHint, &val, dst)))
+        TVPThrowExceptionMessage(TJS_W("dest has no pitch."));
+    dpitch = (tjs_int32)val.AsInteger();
 
     return layerClass;
 }
