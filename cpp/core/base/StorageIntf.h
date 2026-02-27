@@ -284,6 +284,8 @@ void TVPRemoveFromStorageCache(const ttstr &name);
 
 extern tjs_uint TVPSegmentCacheLimit; // XP3 segment cache limit, in bytes.
 
+void TVPAutoMountSiblingXP3Archives();
+
 //---------------------------------------------------------------------------
 
 //---------------------------------------------------------------------------

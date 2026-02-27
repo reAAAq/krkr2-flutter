@@ -14,6 +14,7 @@
 #include <fcntl.h>
 #include <cstring>
 #include <filesystem>
+#include <set>
 #include <sys/stat.h>
 #include <vector>
 #include "MsgIntf.h"
@@ -1474,4 +1475,127 @@ bool TVPSaveStreamToFile(tTJSBinaryStream *st, tjs_uint64 offset,
     fclose(fp);
     st->SetPosition(origpos);
     return true;
+}
+
+//---------------------------------------------------------------------------
+// TVPAutoMountSiblingXP3Archives
+//---------------------------------------------------------------------------
+void TVPAutoMountSiblingXP3Archives() {
+    if(TVPProjectDir.GetLastChar() != TJS_W('/'))
+        return;
+
+    tjs_int len = TVPProjectDir.GetLen();
+    while(len > 0 && TVPProjectDir[len - 1] == TJS_W('/'))
+        len--;
+    if(len == 0)
+        return;
+    ttstr projDir = TVPProjectDir.SubString(0, len);
+    ttstr parentStoragePath = TVPExtractStoragePath(projDir);
+    if(parentStoragePath.IsEmpty())
+        return;
+
+    ttstr projBaseName = TVPExtractStorageName(projDir);
+
+    spdlog::info("AutoMountXP3: TVPProjectDir={}", TVPProjectDir.AsStdString());
+    spdlog::info("AutoMountXP3: parentStoragePath={}", parentStoragePath.AsStdString());
+    spdlog::info("AutoMountXP3: projBaseName={}", projBaseName.AsStdString());
+
+    ttstr nativeParent = parentStoragePath;
+    try {
+        TVPGetLocalName(nativeParent);
+    } catch(eTJSError &e) {
+        spdlog::error("AutoMountXP3: TVPGetLocalName threw: {}", e.GetMessage().AsStdString());
+        return;
+    } catch(...) {
+        spdlog::error("AutoMountXP3: TVPGetLocalName threw unknown exception");
+        return;
+    }
+
+    std::string parentPath = nativeParent.AsStdString();
+    spdlog::info("AutoMountXP3: nativeParent={}", parentPath);
+
+    DIR *dirp = opendir(parentPath.c_str());
+    if(!dirp) {
+        spdlog::error("AutoMountXP3: opendir failed for: {}, errno={}", parentPath, errno);
+        return;
+    }
+
+    std::string projBaseStr = projBaseName.AsNarrowStdString();
+    for(auto &c : projBaseStr) c = (char)tolower((unsigned char)c);
+
+    std::vector<std::string> xp3Names;
+    struct dirent *dp;
+    while((dp = readdir(dirp))) {
+        std::string name = dp->d_name;
+        if(name.size() < 5) continue;
+        std::string ext = name.substr(name.size() - 4);
+        for(auto &c : ext) c = (char)tolower((unsigned char)c);
+        if(ext != ".xp3") continue;
+
+        std::string baseLower = name.substr(0, name.size() - 4);
+        for(auto &c : baseLower) c = (char)tolower((unsigned char)c);
+        if(baseLower == projBaseStr) continue;
+
+        xp3Names.push_back(name);
+    }
+    closedir(dirp);
+
+    if(xp3Names.empty()) {
+        TVPAddImportantLog(TJS_W("(info) No sibling XP3 archives found"));
+        return;
+    }
+
+    for(const auto &xp3Name : xp3Names) {
+        ttstr archivePath = parentStoragePath + ttstr(xp3Name.c_str());
+        archivePath = TVPNormalizeStorageName(archivePath);
+
+        tTVPArchive *arc = nullptr;
+        try {
+            arc = TVPOpenArchive(archivePath, true);
+        } catch(...) {
+            TVPAddImportantLog(
+                ttstr(TJS_W("(warn) Failed to open sibling archive: ")) +
+                archivePath);
+            continue;
+        }
+        if(!arc) continue;
+
+        std::set<std::u16string> dirPaths;
+        dirPaths.insert(std::u16string());
+
+        tjs_uint fileCount = arc->GetCount();
+        for(tjs_uint i = 0; i < fileCount; i++) {
+            ttstr fname = arc->GetName(i);
+            const tjs_char *s = fname.c_str();
+            tjs_int len = fname.GetLen();
+            for(tjs_int j = 0; j < len; j++) {
+                if(s[j] == TJS_W('/')) {
+                    std::u16string d(
+                        reinterpret_cast<const char16_t *>(s),
+                        static_cast<size_t>(j + 1));
+                    dirPaths.insert(d);
+                }
+            }
+        }
+
+        arc->Release();
+
+        tjs_char delimStr[2] = { TVPArchiveDelimiter, 0 };
+        ttstr archiveBase = archivePath + ttstr(delimStr);
+
+        for(const auto &d : dirPaths) {
+            ttstr dirStr(reinterpret_cast<const tjs_char *>(d.c_str()),
+                         static_cast<tjs_int>(d.size()));
+            ttstr autoPath = archiveBase + dirStr;
+            try {
+                TVPAddAutoPath(autoPath);
+            } catch(...) {}
+        }
+
+        TVPAddImportantLog(
+            ttstr(TJS_W("(info) Auto-mounted sibling archive: ")) +
+            archivePath + ttstr(TJS_W(" (")) +
+            ttstr((tjs_int)dirPaths.size()) + ttstr(TJS_W(" dirs, ")) +
+            ttstr((tjs_int)fileCount) + ttstr(TJS_W(" files)")));
+    }
 }

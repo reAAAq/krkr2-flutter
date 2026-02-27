@@ -363,6 +363,8 @@ bool tTVPApplication::StartApplication(ttstr path) {
         // start image load thread
         image_load_thread_->Resume();
 
+        TVPAutoMountSiblingXP3Archives();
+
         spdlog::debug("StartApplication: TVPInitializeStartupScript...");
         spdlog::default_logger()->flush();
         TVPInitializeStartupScript();
