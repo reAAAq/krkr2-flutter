@@ -1,28 +1,38 @@
 package org.github.krkr2.flutter_engine_bridge
 
+import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.provider.DocumentsContract
 import android.provider.Settings
 import android.util.Log
 import android.view.Surface
 import io.flutter.embedding.engine.plugins.FlutterPlugin
+import io.flutter.embedding.engine.plugins.activity.ActivityAware
+import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
+import io.flutter.plugin.common.PluginRegistry
 import io.flutter.view.TextureRegistry
 
 /** FlutterEngineBridgePlugin */
 class FlutterEngineBridgePlugin :
     FlutterPlugin,
-    MethodCallHandler {
+    MethodCallHandler,
+    ActivityAware,
+    PluginRegistry.ActivityResultListener {
 
     private lateinit var channel: MethodChannel
     private lateinit var textureRegistry: TextureRegistry
     private lateinit var binding: FlutterPlugin.FlutterPluginBinding
     private var engineAttached: Boolean = false
+    private var activity: Activity? = null
+    private var activityBinding: ActivityPluginBinding? = null
+    private var pendingPickResult: Result? = null
 
     // SurfaceTexture zero-copy textures (Android equivalent of IOSurface)
     private val surfaceTextures = mutableMapOf<Long, TextureRegistry.SurfaceTextureEntry>()
@@ -32,15 +42,12 @@ class FlutterEngineBridgePlugin :
     private val legacyTextures = mutableMapOf<Long, TextureRegistry.SurfaceTextureEntry>()
 
     companion object {
+        private const val PICK_FILE_REQUEST = 9001
+
         init {
-            // Load the native library that contains JNI bridge methods.
-            // This is the same engine_api.so loaded by Dart FFI, but we
-            // need to ensure it is loaded on the Java side too for JNI
-            // method registration (nativeSetSurface etc.).
             try {
                 System.loadLibrary("engine_api")
             } catch (e: UnsatisfiedLinkError) {
-                // May already be loaded by Dart FFI, or not built yet.
                 android.util.Log.w("krkr2", "engine_api native lib not found: ${e.message}")
             }
         }
@@ -270,8 +277,105 @@ class FlutterEngineBridgePlugin :
                 result.success(null)
             }
 
+            "resolveContentUri" -> {
+                val uriString = call.argument<String>("uri")
+                if (uriString == null) {
+                    result.success(null)
+                    return
+                }
+                val realPath = resolveRealPath(Uri.parse(uriString))
+                result.success(realPath)
+            }
+
+            "pickFile" -> {
+                val act = activity
+                if (act == null) {
+                    result.error("no_activity", "No activity available", null)
+                    return
+                }
+                if (pendingPickResult != null) {
+                    result.error("busy", "Another pick is in progress", null)
+                    return
+                }
+                pendingPickResult = result
+                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "*/*"
+                }
+                act.startActivityForResult(intent, PICK_FILE_REQUEST)
+            }
+
             else -> result.notImplemented()
         }
+    }
+
+    private fun resolveRealPath(uri: Uri): String? {
+        val ctx = binding.applicationContext
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT &&
+            DocumentsContract.isDocumentUri(ctx, uri)
+        ) {
+            val docId = DocumentsContract.getDocumentId(uri)
+            if (uri.authority == "com.android.externalstorage.documents") {
+                val parts = docId.split(":", limit = 2)
+                if (parts.size == 2) {
+                    val storageType = parts[0]
+                    val relativePath = parts[1]
+                    val root = if (storageType.equals("primary", ignoreCase = true)) {
+                        Environment.getExternalStorageDirectory().absolutePath
+                    } else {
+                        "/storage/$storageType"
+                    }
+                    return "$root/$relativePath"
+                }
+            }
+        }
+        try {
+            ctx.contentResolver.query(uri, arrayOf("_data"), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idx = cursor.getColumnIndex("_data")
+                    if (idx >= 0) return cursor.getString(idx)
+                }
+            }
+        } catch (_: Exception) {}
+        return null
+    }
+
+    // --- ActivityAware ---
+
+    override fun onAttachedToActivity(binding: ActivityPluginBinding) {
+        activity = binding.activity
+        activityBinding = binding
+        binding.addActivityResultListener(this)
+    }
+
+    override fun onDetachedFromActivity() {
+        activityBinding?.removeActivityResultListener(this)
+        activity = null
+        activityBinding = null
+    }
+
+    override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
+        onAttachedToActivity(binding)
+    }
+
+    override fun onDetachedFromActivityForConfigChanges() {
+        onDetachedFromActivity()
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
+        if (requestCode != PICK_FILE_REQUEST) return false
+        val result = pendingPickResult
+        pendingPickResult = null
+        if (result == null) return true
+
+        if (resultCode != Activity.RESULT_OK || data?.data == null) {
+            result.success(null)
+            return true
+        }
+        val uri = data.data!!
+        val realPath = resolveRealPath(uri)
+        result.success(realPath)
+        return true
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {

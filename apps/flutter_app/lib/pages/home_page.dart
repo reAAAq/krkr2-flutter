@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -240,16 +241,48 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  static const MethodChannel _platformChannel = MethodChannel(
+    'flutter_engine_bridge',
+  );
+
   Future<void> _addGameArchive() async {
     final l10n = AppLocalizations.of(context)!;
-    // Android's SAF doesn't recognise the .xp3 MIME type, so
-    // FileType.custom silently fails. Use FileType.any on Android
-    // and filter by extension afterwards.
+
+    if (Platform.isAndroid) {
+      // Native picker: zero-copy, returns real filesystem path directly.
+      final realPath = await _platformChannel.invokeMethod<String>('pickFile');
+      if (realPath == null || !mounted) return;
+      if (!realPath.toLowerCase().endsWith('.xp3')) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.selectGameArchive),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+      final game = GameInfo(path: realPath);
+      final added = await _gameManager.addGame(game);
+      if (mounted) {
+        if (added) {
+          setState(() {});
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(l10n.gameAlreadyExists(p.basename(realPath))),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+      return;
+    }
+
     final result = await FilePicker.platform.pickFiles(
       dialogTitle: l10n.selectGameArchive,
-      type: Platform.isAndroid ? FileType.any : FileType.custom,
-      allowedExtensions: Platform.isAndroid ? null : ['xp3', 'XP3'],
-      allowMultiple: !Platform.isAndroid,
+      type: FileType.custom,
+      allowedExtensions: ['xp3', 'XP3'],
+      allowMultiple: true,
     );
     if (result == null || result.files.isEmpty || !mounted) return;
 
@@ -286,8 +319,7 @@ class _HomePageState extends State<HomePage> {
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(l10n.gameAlreadyExists(
-                xp3Files.first.name)),
+            content: Text(l10n.gameAlreadyExists(xp3Files.first.name)),
             behavior: SnackBarBehavior.floating,
           ),
         );

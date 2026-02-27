@@ -1514,16 +1514,17 @@ void TVPAutoMountSiblingXP3Archives() {
     std::string parentPath = nativeParent.AsStdString();
     spdlog::info("AutoMountXP3: nativeParent={}", parentPath);
 
+    std::string projBaseStr = projBaseName.AsNarrowStdString();
+    for(auto &c : projBaseStr) c = (char)tolower((unsigned char)c);
+
+    std::vector<std::string> xp3Names;
+
     DIR *dirp = opendir(parentPath.c_str());
     if(!dirp) {
         spdlog::error("AutoMountXP3: opendir failed for: {}, errno={}", parentPath, errno);
         return;
     }
 
-    std::string projBaseStr = projBaseName.AsNarrowStdString();
-    for(auto &c : projBaseStr) c = (char)tolower((unsigned char)c);
-
-    std::vector<std::string> xp3Names;
     struct dirent *dp;
     while((dp = readdir(dirp))) {
         std::string name = dp->d_name;
