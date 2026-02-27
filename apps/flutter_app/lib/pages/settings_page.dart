@@ -2,8 +2,10 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../l10n/app_localizations.dart';
 import '../main.dart';
@@ -498,9 +500,76 @@ class _SettingsPageState extends State<SettingsPage> {
               label: l10n.settingsAbout,
             ),
             Card(
-              child: ListTile(
-                title: Text(l10n.version),
-                trailing: const Text('dev'),
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.science_outlined),
+                    title: Text(l10n.version),
+                    subtitle: Text(
+                      l10n.aboutVersionDesc,
+                      style: TextStyle(
+                        color: colorScheme.error,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.person_outline),
+                    title: Text(l10n.aboutAuthor),
+                    trailing: Text(
+                      'reAAAq',
+                      style: TextStyle(
+                        color: colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.email_outlined),
+                    title: Text(l10n.aboutEmail),
+                    trailing: Text(
+                      'wangguanzhiabcd@126.com',
+                      style: TextStyle(
+                        color: colorScheme.primary,
+                        fontSize: 13,
+                      ),
+                    ),
+                    onTap: () {
+                      Clipboard.setData(
+                        const ClipboardData(text: 'wangguanzhiabcd@126.com'),
+                      );
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(l10n.aboutEmailCopied),
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.code),
+                    title: const Text('GitHub'),
+                    subtitle: const Text(
+                      'github.com/reAAAq/KrKr2-Next',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    trailing: Icon(
+                      Icons.open_in_new,
+                      size: 18,
+                      color: colorScheme.onSurface.withValues(alpha: 0.5),
+                    ),
+                    onTap: () {
+                      launchUrl(
+                        Uri.parse('https://github.com/reAAAq/KrKr2-Next'),
+                        mode: LaunchMode.externalApplication,
+                      );
+                    },
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 32),

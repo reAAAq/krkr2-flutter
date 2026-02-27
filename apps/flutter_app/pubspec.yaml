@@ -46,6 +46,7 @@ dependencies:
     path: ../../bridge/flutter_engine_bridge
   image_picker: ^1.2.1
   flutter_svg: ^2.0.17
+  url_launcher: ^6.2.0
 
 dev_dependencies:
   flutter_test:

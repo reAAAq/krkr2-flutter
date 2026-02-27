@@ -245,6 +245,18 @@ class AppLocalizationsJa extends AppLocalizations {
   String get version => 'バージョン';
 
   @override
+  String get aboutVersionDesc => '反復テスト中、長期使用はご遠慮ください';
+
+  @override
+  String get aboutAuthor => '作者';
+
+  @override
+  String get aboutEmail => 'メール';
+
+  @override
+  String get aboutEmailCopied => 'メールアドレスをコピーしました';
+
+  @override
   String get gameEngineError => 'エンジンエラー';
 
   @override

@@ -550,6 +550,30 @@ abstract class AppLocalizations {
   /// **'Version'**
   String get version;
 
+  /// No description provided for @aboutVersionDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Iterative testing, not for long-term use'**
+  String get aboutVersionDesc;
+
+  /// No description provided for @aboutAuthor.
+  ///
+  /// In en, this message translates to:
+  /// **'Author'**
+  String get aboutAuthor;
+
+  /// No description provided for @aboutEmail.
+  ///
+  /// In en, this message translates to:
+  /// **'Email'**
+  String get aboutEmail;
+
+  /// No description provided for @aboutEmailCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Email copied to clipboard'**
+  String get aboutEmailCopied;
+
   /// No description provided for @gameEngineError.
   ///
   /// In en, this message translates to:

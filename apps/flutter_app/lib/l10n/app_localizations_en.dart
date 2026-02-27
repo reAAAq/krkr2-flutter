@@ -253,6 +253,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get version => 'Version';
 
   @override
+  String get aboutVersionDesc => 'Iterative testing, not for long-term use';
+
+  @override
+  String get aboutAuthor => 'Author';
+
+  @override
+  String get aboutEmail => 'Email';
+
+  @override
+  String get aboutEmailCopied => 'Email copied to clipboard';
+
+  @override
   String get gameEngineError => 'Engine Error';
 
   @override

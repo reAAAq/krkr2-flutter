@@ -243,6 +243,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get version => '版本';
 
   @override
+  String get aboutVersionDesc => '迭代测试，切勿长期使用';
+
+  @override
+  String get aboutAuthor => '作者';
+
+  @override
+  String get aboutEmail => '邮箱';
+
+  @override
+  String get aboutEmailCopied => '邮箱已复制到剪贴板';
+
+  @override
   String get gameEngineError => '引擎错误';
 
   @override

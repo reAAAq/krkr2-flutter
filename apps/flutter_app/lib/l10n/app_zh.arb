@@ -88,6 +88,10 @@
 
   "settingsAbout": "关于",
   "version": "版本",
+  "aboutVersionDesc": "迭代测试，切勿长期使用",
+  "aboutAuthor": "作者",
+  "aboutEmail": "邮箱",
+  "aboutEmailCopied": "邮箱已复制到剪贴板",
 
   "gameEngineError": "引擎错误",
   "unknownError": "未知错误",

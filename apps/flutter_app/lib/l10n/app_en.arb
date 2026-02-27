@@ -108,6 +108,10 @@
 
   "settingsAbout": "About",
   "version": "Version",
+  "aboutVersionDesc": "Iterative testing, not for long-term use",
+  "aboutAuthor": "Author",
+  "aboutEmail": "Email",
+  "aboutEmailCopied": "Email copied to clipboard",
 
   "gameEngineError": "Engine Error",
   "unknownError": "Unknown error",

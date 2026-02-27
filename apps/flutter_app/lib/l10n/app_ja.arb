@@ -88,6 +88,10 @@
 
   "settingsAbout": "バージョン情報",
   "version": "バージョン",
+  "aboutVersionDesc": "反復テスト中、長期使用はご遠慮ください",
+  "aboutAuthor": "作者",
+  "aboutEmail": "メール",
+  "aboutEmailCopied": "メールアドレスをコピーしました",
 
   "gameEngineError": "エンジンエラー",
   "unknownError": "不明なエラー",
