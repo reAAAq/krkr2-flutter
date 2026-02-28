@@ -216,9 +216,7 @@ void tTVPStorageMediaManager::Register(iTVPStorageMedia *media) {
     media->GetName(medianame);
 
     tMediaRecord *rec = HashTable.Find(*(tMediaNameString *)&medianame);
-    if(rec)
-        TVPThrowExceptionMessage(TVPMediaNameHadAlreadyBeenRegistered,
-                                 medianame);
+    if(rec) return;
 
     tMediaRecord new_rec(media);
 
@@ -717,6 +715,9 @@ public:
 
         // not exist in the cache
         tTVPArchive *arc = TVPOpenArchive(name, true);
+        if(!arc) {
+            TVPThrowExceptionMessage(TVPCannotFindStorage, name);
+        }
         tHolder holder(arc);
         ArchiveCache.AddWithHash(name, hash, holder);
         return arc;
@@ -985,14 +986,18 @@ static tjs_uint TVPRebuildAutoPathTable() {
             tTVPArchive::NormalizeInArchiveStorageName(in_arc_name);
             tjs_int in_arc_name_len = in_arc_name.GetLen();
 
-            tTVPArchive *arc;
-            arc = TVPArchiveCache.Get(arcname);
+            tTVPArchive *arc = nullptr;
+            try {
+                arc = TVPArchiveCache.Get(arcname);
+            } catch(...) {
+                TVPAddLog(ttstr(TJS_W("(warning) Cannot open archive: ")) + arcname);
+                continue;
+            }
+            if(!arc) continue;
 
             try {
                 tjs_uint storagecount = arc->GetCount();
 
-                // get first index which the item has 'in_arc_name' as
-                // its start of the string.
                 tjs_int i = arc->GetFirstIndexStartsWith(in_arc_name);
                 if(i != -1) {
                     for(; i < (tjs_int)storagecount; i++) {
@@ -1006,8 +1011,6 @@ static tjs_uint TVPRebuildAutoPathTable() {
                                 count++;
                             }
                         } else {
-                            // no need to check more;
-                            // because the list is sorted by the name.
                             break;
                         }
                     }

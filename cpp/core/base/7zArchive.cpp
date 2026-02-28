@@ -36,7 +36,10 @@ public:
                                 ESzSeek origin) -> SRes {
             return ((CSeekInStream *)p)->Host->StreamSeek(pos, origin);
         };
+        lookStream.buf = (Byte *)ISzAlloc_Alloc(&allocImp, 1 << 18);
+        lookStream.bufSize = 1 << 18;
         LookToRead2_CreateVTable(&lookStream, false);
+        LookToRead2_INIT(&lookStream);
         lookStream.realStream = &archiveStream;
         SzArEx_Init(&db);
         if(!g_CrcTable[1])
@@ -45,6 +48,8 @@ public:
 
     ~SevenZipStreamWrap() {
         SzArEx_Free(&db, &allocImp);
+        if(lookStream.buf)
+            ISzAlloc_Free(&allocImp, lookStream.buf);
         delete _stream;
     }
 
