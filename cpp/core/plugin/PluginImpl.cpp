@@ -44,10 +44,70 @@
 
 //---------------------------------------------------------------------------
 bool TVPLoadInternalPlugin(const ttstr &_name);
+bool TVPRegisterGlobalObject(const tjs_char *name, iTJSDispatch2 *dsp);
+
+static iTJSDispatch2 *s_ProxyStorageMap = nullptr;
+
+class tTVPProxyStorageMedia : public iTVPStorageMedia {
+    tjs_uint RefCount = 1;
+
+    ttstr ResolveProxy(const ttstr &name) {
+        if(!s_ProxyStorageMap) return ttstr();
+        tjs_int lastSlash = -1;
+        const tjs_char *p = name.c_str();
+        for(tjs_int i = 0; p[i]; i++) {
+            if(p[i] == TJS_W('/')) lastSlash = i;
+        }
+        ttstr key = (lastSlash >= 0) ? ttstr(p + lastSlash + 1) : name;
+        tTJSVariant val;
+        if(s_ProxyStorageMap->PropGet(TJS_MEMBERMUSTEXIST, key.c_str(),
+            nullptr, &val, s_ProxyStorageMap) == TJS_S_OK) {
+            return val.GetString();
+        }
+        return ttstr();
+    }
+public:
+    void AddRef() override { RefCount++; }
+    void Release() override { if(RefCount == 1) delete this; else RefCount--; }
+    void GetName(ttstr &name) override { name = TJS_W("proxy"); }
+    void NormalizeDomainName(ttstr &name) override {
+        tjs_char *p = name.Independ();
+        while(*p) { if(*p >= TJS_W('A') && *p <= TJS_W('Z')) *p += TJS_W('a') - TJS_W('A'); p++; }
+    }
+    void NormalizePathName(ttstr &name) override {
+        tjs_char *p = name.Independ();
+        while(*p) { if(*p == TJS_W('\\')) *p = TJS_W('/'); if(*p >= TJS_W('A') && *p <= TJS_W('Z')) *p += TJS_W('a') - TJS_W('A'); p++; }
+    }
+    bool CheckExistentStorage(const ttstr &name) override {
+        ttstr resolved = ResolveProxy(name);
+        if(resolved.IsEmpty()) return false;
+        return TVPIsExistentStorage(resolved);
+    }
+    tTJSBinaryStream *Open(const ttstr &name, tjs_uint32 flags) override {
+        ttstr resolved = ResolveProxy(name);
+        if(resolved.IsEmpty()) return nullptr;
+        return TVPCreateStream(resolved, flags);
+    }
+    void GetListAt(const ttstr &, iTVPStorageLister *) override {}
+    void GetLocallyAccessibleName(ttstr &name) override { name.Clear(); }
+};
+
+static void TVPRegisterProxyFsStub() {
+    iTJSDispatch2 *dict = TJSCreateDictionaryObject();
+    if(!dict) return;
+    s_ProxyStorageMap = dict;
+    s_ProxyStorageMap->AddRef();
+    TVPRegisterGlobalObject(TJS_W("ProxyStorageMap"), dict);
+    dict->Release();
+
+    auto *media = new tTVPProxyStorageMedia();
+    TVPRegisterStorageMedia(media);
+    media->Release();
+    spdlog::info("Registered proxy storage media stub for missing proxyfs.dll");
+}
 
 void TVPLoadPlugin(const ttstr &name) {
     auto pluginName = name;
-    // motionplayer.dll and emoteplayer.dll may be same?
     if(name == TJS_W("emoteplayer.dll"))
         pluginName = "motionplayer.dll";
 
@@ -55,6 +115,9 @@ void TVPLoadPlugin(const ttstr &name) {
         spdlog::debug("Loading Plugin: {} Success", name.AsStdString());
     } else {
         spdlog::error("Loading Plugin: {} Failed", name.AsStdString());
+        if(name == TJS_W("proxyfs.dll")) {
+            TVPRegisterProxyFsStub();
+        }
     }
 }
 
