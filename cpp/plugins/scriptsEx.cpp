@@ -965,6 +965,20 @@ tjs_error ScriptsAdd::safeEvalStorage(tTJSVariant *result, tjs_int numparams,
     return TJS_S_OK;
 }
 //----------------------------------------------------------------------
+static tjs_error loadDataPack(tTJSVariant *result,
+                              tjs_int numparams,
+                              tTJSVariant **param,
+                              iTJSDispatch2 *objthis) {
+    if(numparams < 1)
+        return TJS_E_BADPARAMCOUNT;
+    if(result) {
+        iTJSDispatch2 *dict = TJSCreateDictionaryObject();
+        *result = tTJSVariant(dict, dict);
+        dict->Release();
+    }
+    return TJS_S_OK;
+}
+
 NCB_ATTACH_CLASS(ScriptsAdd, Scripts) {
     RawCallback(TJS_W("getObjectKeys"), &ScriptsAdd::getKeys, TJS_STATICMEMBER);
     RawCallback(TJS_W("getObjectCount"), &ScriptsAdd::getCount,
@@ -988,6 +1002,7 @@ NCB_ATTACH_CLASS(ScriptsAdd, Scripts) {
 
     RawCallback(TJS_W("safeEvalStorage"), &ScriptsAdd::safeEvalStorage,
                 TJS_STATICMEMBER);
+    RawCallback(TJS_W("loadDataPack"), &loadDataPack, TJS_STATICMEMBER);
 };
 
 NCB_ATTACH_FUNCTION(rehash, Scripts, TJSDoRehash);
