@@ -86,22 +86,28 @@ public:
         return (Options & opt) == opt;
     }
     [[nodiscard]] tjs_char GetDefaultChar() const {
-        return Face->GetDefaultChar();
+        return Face ? Face->GetDefaultChar() : 0;
     }
     tjs_char GetFirstChar() {
+        if(!FTFace) return 0;
         FT_UInt gindex;
         return static_cast<tjs_char>(FT_Get_First_Char(FTFace, &gindex));
     }
 
     [[nodiscard]] tjs_int GetAscent() const {
+        if(!FTFace || !FTFace->size) return 0;
         tjs_int ppem = FTFace->size->metrics.y_ppem;
         tjs_int upe = FTFace->units_per_EM;
+        if(upe == 0) return 0;
         return FTFace->ascender * ppem / upe;
     }
     void GetUnderline(tjs_int &pos, tjs_int &thickness) const {
+        if(!FTFace || !FTFace->size || FTFace->units_per_EM == 0) {
+            pos = 0; thickness = 1; return;
+        }
         tjs_int ppem = FTFace->size->metrics.y_ppem;
         tjs_int upe = FTFace->units_per_EM;
-        tjs_int liney = 0; // 下線の位置
+        tjs_int liney = 0;
         tjs_int height = FT_PosToInt(FTFace->size->metrics.height);
         liney = ((FTFace->ascender - FTFace->underline_position) * ppem) / upe;
         thickness = (FTFace->underline_thickness * ppem) / upe;
@@ -113,6 +119,9 @@ public:
         pos = liney;
     }
     void GetStrikeOut(tjs_int &pos, tjs_int &thickness) const {
+        if(!FTFace || !FTFace->size || FTFace->units_per_EM == 0) {
+            pos = 0; thickness = 1; return;
+        }
         tjs_int ppem = FTFace->size->metrics.y_ppem;
         tjs_int upe = FTFace->units_per_EM;
         thickness = FTFace->underline_thickness * ppem / upe;

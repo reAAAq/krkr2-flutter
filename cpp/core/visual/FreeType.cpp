@@ -42,13 +42,17 @@ extern bool TVPEncodeUTF8ToUTF16(ttstr &output, const std::string &source);
 //---------------------------------------------------------------------------
 
 FT_Library FreeTypeLibrary = nullptr; //!< FreeType ライブラリ
+static int FreeTypeRefCount = 0;
 void TVPInitializeFont() {
     if(FreeTypeLibrary == nullptr) {
         FT_Error err = FT_Init_FreeType(&FreeTypeLibrary);
     }
+    FreeTypeRefCount++;
 }
 void TVPUninitializeFreeFont() {
-    if(FreeTypeLibrary) {
+    if(FreeTypeRefCount > 0)
+        FreeTypeRefCount--;
+    if(FreeTypeRefCount <= 0 && FreeTypeLibrary) {
         FT_Done_FreeType(FreeTypeLibrary);
         FreeTypeLibrary = nullptr;
     }
@@ -638,7 +642,8 @@ bool tFreeTypeFace::GetGlyphSizeFromCharcode(tjs_char code,
  * @return	成功の場合真、失敗の場合偽
  */
 bool tFreeTypeFace::LoadGlyphSlotFromCharcode(tjs_char code) {
-    // TODO: スレッド保護
+    if(!FTFace)
+        return false;
 
     // 文字コードを得る
     FT_ULong localcode;

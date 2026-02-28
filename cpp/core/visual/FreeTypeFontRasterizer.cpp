@@ -103,6 +103,7 @@ void FreeTypeFontRasterizer::ApplyFont(const tTVPFont &font) {
     if(Face) {
         if(Face->GetFontName() != stdname) {
             delete Face;
+            Face = nullptr;
             Face = new tFreeTypeFace(stdname, opt);
             recreate = true;
         }
@@ -165,6 +166,8 @@ static bool isUnicodeSpace(char16_t ch) {
 tTVPCharacterData *
 FreeTypeFontRasterizer::GetBitmap(const tTVPFontAndCharacterData &font,
                                   tjs_int aofsx, tjs_int aofsy) {
+    if(!Face)
+        return nullptr;
     if(font.Antialiased) {
         Face->ClearOption(TVP_FACE_OPTIONS_NO_ANTIALIASING);
     } else {
@@ -224,7 +227,10 @@ FreeTypeFontRasterizer::GetBitmap(const tTVPFontAndCharacterData &font,
 //---------------------------------------------------------------------------
 void FreeTypeFontRasterizer::GetGlyphDrawRect(const ttstr &text,
                                               tTVPRect &area) {
-    // アンチエイリアスとヒンティングは有効にする
+    if(!Face) {
+        area.left = area.top = area.right = area.bottom = 0;
+        return;
+    }
     Face->ClearOption(TVP_FACE_OPTIONS_NO_ANTIALIASING);
     Face->ClearOption(TVP_FACE_OPTIONS_NO_HINTING);
 
