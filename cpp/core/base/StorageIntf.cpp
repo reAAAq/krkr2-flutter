@@ -30,7 +30,7 @@
 // global variables
 //---------------------------------------------------------------------------
 // current media ( ex. "http" "ftp" "file" )
-ttstr TVPCurrentMedia;
+ttstr TVPCurrentMedia = TJS_W("file");
 // archive delimiter
 // this changes '>' from '#' since 2.19 beta 14
 tjs_char TVPArchiveDelimiter = '>';
@@ -343,6 +343,7 @@ ttstr tTVPStorageMediaManager::NormalizeStorageName(const ttstr &name,
     // supply omitted and normalize
     if(media.IsEmpty()) {
         media = TVPCurrentMedia;
+        if(media.IsEmpty()) media = TJS_W("file");
     } else {
         // normalize media name ( make them all small )
         //        tjs_char *p = media.Independ();

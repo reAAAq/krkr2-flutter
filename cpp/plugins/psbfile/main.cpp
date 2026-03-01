@@ -79,11 +79,20 @@ static tjs_error load(tTJSVariant *r, tjs_int count, tTJSVariant **p,
 
     if((*p)->Type() == tvtString) {
         ttstr path{ **p };
-        if(!self->loadPSBFile(path)) {
-            LOGGER->info("cannot load psb file : {}", path.AsStdString());
+        try {
+            if(!self->loadPSBFile(path)) {
+                LOGGER->info("cannot load psb file : {}", path.AsStdString());
+                loadSuccess = false;
+            } else {
+                registerPsbResources(self, path);
+            }
+        } catch(const std::exception &e) {
+            LOGGER->warn("PSBFile load error: {} ({})", e.what(), path.AsStdString());
+            loadSuccess = false;
+        } catch(...) {
+            LOGGER->warn("PSBFile load unknown error: {}", path.AsStdString());
             loadSuccess = false;
         }
-        registerPsbResources(self, path);
     } else if((*p)->Type() == tvtOctet) {
         LOGGER->critical("PSBFile::load stream no implement!");
         loadSuccess = false;
@@ -141,8 +150,17 @@ static tjs_error PSBFileFactory(PSBFile **result, tjs_int count,
     } else if(count == 1 && (*params)->Type() == tvtString) {
         ttstr path{ *params[0] };
         psbFile = new PSBFile();
-        psbFile->loadPSBFile(path);
-        registerPsbResources(psbFile, path);
+        try {
+            if(psbFile->loadPSBFile(path)) {
+                registerPsbResources(psbFile, path);
+            } else {
+                LOGGER->warn("Failed to load PSB file: {}", path.AsStdString());
+            }
+        } catch(const std::exception &e) {
+            LOGGER->warn("PSBFile load error: {} ({})", e.what(), path.AsStdString());
+        } catch(...) {
+            LOGGER->warn("PSBFile load unknown error: {}", path.AsStdString());
+        }
     } else {
         return TJS_E_INVALIDPARAM;
     }

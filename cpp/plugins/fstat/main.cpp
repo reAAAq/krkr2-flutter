@@ -381,7 +381,14 @@ public:
      */
     static bool deleteFile(const tjs_char *file) {
         bool r = false;
-        if(ttstr filename(TVPGetLocallyAccessibleName(TVPGetPlacedPath(file)));
+        ttstr placedPath(TVPGetPlacedPath(file));
+        if(placedPath.IsEmpty()) {
+            // Safe-save flows may try to delete temporary files that do not
+            // exist yet. Treat this as a no-op instead of throwing from
+            // TVPGetLocallyAccessibleName on empty input.
+            return false;
+        }
+        if(ttstr filename(TVPGetLocallyAccessibleName(placedPath));
            filename.length()) {
             r = TVPDeleteFile(filename.AsNarrowStdString());
             if(!r) {
@@ -416,8 +423,12 @@ public:
      */
     static bool moveFile(const tjs_char *from, const tjs_char *to) {
         bool r = false;
-        const ttstr &fromFile(TVPGetLocallyAccessibleName(from));
-        const ttstr &toFile(TVPGetLocallyAccessibleName(to));
+        ttstr fromPlaced = TVPGetPlacedPath(from);
+        if(fromPlaced.IsEmpty()) return false;
+
+        const ttstr &fromFile(TVPGetLocallyAccessibleName(fromPlaced));
+        const ttstr &toFile(
+            TVPGetLocallyAccessibleName(TVPNormalizeStorageName(to)));
         if(fromFile.length() && toFile.length()) {
             const std::string &ff = fromFile.AsNarrowStdString();
             r = TVPCopyFile(ff, toFile.AsNarrowStdString());
