@@ -23,8 +23,9 @@
 #include "XP3Archive.h"
 #include "TickCount.h"
 
-#define TVP_DEFAULT_ARCHIVE_CACHE_NUM 64
+#define TVP_DEFAULT_ARCHIVE_CACHE_NUM 128
 #define TVP_DEFAULT_AUTOPATH_CACHE_NUM 256
+static const tjs_char *TVP_AUTOPATH_CACHE_MISS_MARKER = TJS_W("\x01");
 
 //---------------------------------------------------------------------------
 // global variables
@@ -692,11 +693,27 @@ public:
 
     ~tTVPArchiveCache() = default;
 
-    void SetMaxCount(tjs_int maxcount) { ArchiveCache.SetMaxCount(maxcount); }
+    void SetMaxCount(tjs_int maxcount) {
+        if(maxcount < 1)
+            maxcount = 1;
+        tTJSCSH csh(CS);
+        ArchiveCache.SetMaxCount(maxcount);
+    }
 
     void Clear() {
         // releases all elements
+        tTJSCSH csh(CS);
         ArchiveCache.Clear();
+    }
+
+    tjs_uint GetCount() {
+        tTJSCSH csh(CS);
+        return ArchiveCache.GetCount();
+    }
+
+    tjs_uint GetMaxCount() {
+        tTJSCSH csh(CS);
+        return ArchiveCache.GetMaxCount();
     }
 
     tTVPArchive *Get(ttstr name) {
@@ -705,16 +722,15 @@ public:
         tjs_uint32 hash = tTJSHashCache<ttstr, tHolder>::MakeHash(name);
         tHolder *ptr = ArchiveCache.FindAndTouchWithHash(name, hash);
         if(ptr) {
-            // exist in the cache
             return ptr->GetObject();
         }
 
+        TVPAddLog(ttstr(TJS_W("(info) ArchiveCache miss: ")) + name);
+
         if(!TVPIsExistentStorageNoSearch(name)) {
-            // storage not found
             TVPThrowExceptionMessage(TVPCannotFindStorage, name);
         }
 
-        // not exist in the cache
         tTVPArchive *arc = TVPOpenArchive(name, true);
         if(!arc) {
             TVPThrowExceptionMessage(TVPCannotFindStorage, name);
@@ -727,7 +743,12 @@ public:
 private:
 } TVPArchiveCache;
 
-static void TVPClearArchiveCache() { TVPArchiveCache.Clear(); }
+void TVPClearArchiveCache() { TVPArchiveCache.Clear(); }
+tjs_uint TVPGetArchiveCacheCount() { return TVPArchiveCache.GetCount(); }
+tjs_uint TVPGetArchiveCacheLimit() { return TVPArchiveCache.GetMaxCount(); }
+void TVPSetArchiveCacheCount(tjs_uint max_count) {
+    TVPArchiveCache.SetMaxCount((tjs_int)max_count);
+}
 
 static tTVPAtExit TVPClearArchiveCacheAtExit(TVP_ATEXIT_PRI_SHUTDOWN,
                                              TVPClearArchiveCache);
@@ -899,20 +920,26 @@ tTJSHashTable<ttstr, ttstr, tTJSHashFunc<ttstr>, TVP_AUTO_PATH_HASH_SIZE>
 bool AutoPathTableInit = false;
 
 //---------------------------------------------------------------------------
-static void TVPClearAutoPathCache() {
-    TVPAutoPathCache.Clear();
+static void TVPInvalidateAutoPathTable() {
     TVPAutoPathTable.Clear();
     AutoPathTableInit = false;
+}
+
+//---------------------------------------------------------------------------
+static void TVPClearAutoPathSearchCache() { TVPAutoPathCache.Clear(); }
+
+//---------------------------------------------------------------------------
+static void TVPClearAutoPathCache() {
+    TVPAutoPathCache.Clear();
+    TVPInvalidateAutoPathTable();
 }
 
 //---------------------------------------------------------------------------
 struct tTVPClearAutoPathCacheCallback : public tTVPCompactEventCallbackIntf {
     void OnCompact(tjs_int level) override {
         if(level >= TVP_COMPACT_LEVEL_DEACTIVATE) {
-            // clear the auto search path cache on application
-            // deactivate
             tTJSCriticalSectionHolder cs_holder(TVPCreateStreamCS);
-            TVPClearAutoPathCache();
+            TVPClearAutoPathSearchCache();
         }
     }
 } static TVPClearAutoPathCacheCallback;
@@ -1075,8 +1102,11 @@ ttstr TVPGetPlacedPath(const ttstr &name) {
 #endif
 
     ttstr *incache = TVPAutoPathCache.FindAndTouch(name);
-    if(incache)
+    if(incache) {
+        if(*incache == TVP_AUTOPATH_CACHE_MISS_MARKER)
+            return {};
         return *incache; // found in cache
+    }
 
     tTJSCriticalSectionHolder cs_holder(TVPCreateStreamCS);
 
@@ -1104,7 +1134,7 @@ ttstr TVPGetPlacedPath(const ttstr &name) {
     }
 
     // not found
-    // TVPAutoPathCache.Add(name, ttstr()); // do not cache now
+    TVPAutoPathCache.Add(name, TVP_AUTOPATH_CACHE_MISS_MARKER);
     return {};
 }
 //---------------------------------------------------------------------------
@@ -1228,11 +1258,32 @@ tTJSBinaryStream *TVPCreateStream(const ttstr &_name, tjs_uint32 flags) {
 // TVPClearStorageCaches
 //---------------------------------------------------------------------------
 void TVPClearStorageCaches() {
-    // clear all storage related caches
     TVPClearXP3SegmentCache();
-    TVPClearAutoPathCache();
+    TVPClearAutoPathSearchCache();
 }
 //---------------------------------------------------------------------------
+
+void TVPSetAutoPathCacheMaxCount(tjs_uint max_count) {
+    if(max_count < 1)
+        max_count = 1;
+    tTJSCriticalSectionHolder cs_holder(TVPCreateStreamCS);
+    TVPAutoPathCache.SetMaxCount(max_count);
+}
+
+tjs_uint TVPGetAutoPathCacheCount() {
+    tTJSCriticalSectionHolder cs_holder(TVPCreateStreamCS);
+    return TVPAutoPathCache.GetCount();
+}
+
+tjs_uint TVPGetAutoPathCacheLimit() {
+    tTJSCriticalSectionHolder cs_holder(TVPCreateStreamCS);
+    return TVPAutoPathCache.GetMaxCount();
+}
+
+tjs_uint TVPGetAutoPathTableCount() {
+    tTJSCriticalSectionHolder cs_holder(TVPCreateStreamCS);
+    return TVPAutoPathTable.GetCount();
+}
 
 void TVPRemoveFromStorageCache(const ttstr &name) {
     TVPAutoPathCache.Delete(name);

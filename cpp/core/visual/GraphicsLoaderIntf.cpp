@@ -37,6 +37,7 @@
 #include "GraphicsLoadThread.h"
 #include <complex>
 #include <list>
+#include <spdlog/spdlog.h>
 
 void TVPLoadPVRv3(void *formatdata, void *callbackdata,
                   tTVPGraphicSizeCallback sizecallback,
@@ -47,13 +48,15 @@ void TVPLoadPVRv3(void *formatdata, void *callbackdata,
 void TVPLoadHeaderPVRv3(void *formatdata, tTJSBinaryStream *src,
                         iTJSDispatch2 **dic);
 
+#include "LoadAMV.h"
+
 static void TVPLoadGraphicRouter(void *formatdata, void *callbackdata,
                                  tTVPGraphicSizeCallback sizecallback,
                                  tTVPGraphicScanLineCallback scanlinecallback,
                                  tTVPMetaInfoPushCallback metainfopushcallback,
                                  tTJSBinaryStream *src, tjs_int keyidx,
                                  tTVPGraphicLoadMode mode) {
-    uint8_t header[16];
+    uint8_t header[16] = {};
     tjs_uint64 origSrcPos = src->GetPosition();
     if(src->Read(header, sizeof(header)) == sizeof(header)) {
         src->SetPosition(origSrcPos);
@@ -85,9 +88,18 @@ static void TVPLoadGraphicRouter(void *formatdata, void *callbackdata,
         if(!memcmp(header, "PVR\3", 4)) {
             return CALL_LOAD_FUNC(TVPLoadPVRv3);
         }
+        if(!memcmp(header, "AJPM", 4)) {
+            return CALL_LOAD_FUNC(TVPLoadAMV);
+        }
 #undef CALL_LOAD_FUNC
     }
-    TVPThrowExceptionMessage(TVPImageLoadError, TJS_W("Invalid image"));
+    spdlog::warn("Unsupported image format (header {:02x}{:02x}{:02x}{:02x}), "
+                 "generating 1x1 transparent fallback",
+                 header[0], header[1], header[2], header[3]);
+    sizecallback(callbackdata, 1, 1, gpfRGBA);
+    void *buf = scanlinecallback(callbackdata, 0);
+    if(buf) memset(buf, 0, 4);
+    scanlinecallback(callbackdata, -1);
 }
 
 static void TVPLoadHeaderRouter(void *formatdata, tTJSBinaryStream *src,
@@ -122,9 +134,13 @@ static void TVPLoadHeaderRouter(void *formatdata, tTJSBinaryStream *src,
         if(!memcmp(header, "PVR\3", 4)) {
             return CALL_LOAD_FUNC(TVPLoadHeaderPVRv3);
         }
+        if(!memcmp(header, "AJPM", 4)) {
+            return CALL_LOAD_FUNC(TVPLoadHeaderAMV);
+        }
 #undef CALL_LOAD_FUNC
     }
-    TVPThrowExceptionMessage(TVPImageLoadError, TJS_W("Invalid image"));
+    // unsupported format - return empty dict instead of throwing
+    *dic = TJSCreateDictionaryObject();
 }
 
 //---------------------------------------------------------------------------
@@ -205,6 +221,9 @@ public:
         Handlers.push_back(tTVPGraphicHandlerType(
             TJS_W(".tlg6"), TVPLoadGraphicRouter, TVPLoadHeaderRouter,
             TVPSaveAsTLG, TVPAcceptSaveAsTLG, nullptr));
+        Handlers.push_back(tTVPGraphicHandlerType(
+            TJS_W(".amv"), TVPLoadGraphicRouter, TVPLoadHeaderRouter, nullptr,
+            nullptr, nullptr));
         ReCreateHash();
         Avail = true;
     }
@@ -1463,8 +1482,7 @@ static tTVPAtExit TVPUninitMessageLoad(TVP_ATEXIT_PRI_RELEASE,
 struct tTVPClearGraphicCacheCallback : public tTVPCompactEventCallbackIntf {
     void OnCompact(tjs_int level) override {
         if(level >= TVP_COMPACT_LEVEL_MINIMIZE) {
-            // clear the font cache on application minimize
-            TVPClearGraphicCache();
+            TVPCheckGraphicCacheLimit();
         }
     }
 } static TVPClearGraphicCacheCallback;
@@ -1498,14 +1516,14 @@ void TVPPushGraphicCache(const ttstr &nname, tTVPBitmap *bmp,
             data->MetaInfo = meta;
             meta = nullptr;
 
-            // check size limit
-            TVPCheckGraphicCacheLimit();
-
             // push into hash table
             tjs_uint datasize = data->GetSize();
             TVPGraphicCacheTotalBytes += datasize;
             tTVPGraphicImageHolder holder(data);
             TVPGraphicCache.AddWithHash(searchdata, hash, holder);
+
+            // check size limit after adding new entry
+            TVPCheckGraphicCacheLimit();
         } catch(...) {
             if(meta)
                 delete meta;
@@ -1921,12 +1939,29 @@ int TVPLoadGraphic(iTVPBaseBitmap *dest, const ttstr &name, tjs_int32 keyidx,
     try {
         tTVPBitmap *bmp = nullptr;
         iTVPTexture2D *texture = nullptr;
-        if(mode == glmNormal && keyidx == TVP_clNone && !desw && !desh) {
-            texture = TVPInternalLoadTexture(nname, &mi, &pn);
-        }
-        if(!texture) {
-            bmp = TVPInternalLoadBitmap(nname, keyidx, desw, desh, &mi, mode,
-                                        &pn);
+
+        // Skip XP3 decompression for known unsupported video formats
+        // (but NOT .amv which is now handled by the AMV decoder).
+        ttstr ext = TVPExtractStorageExt(nname);
+        ext.ToLowerCase();
+        bool unsupportedVideo =
+            ext == TJS_W(".avi") || ext == TJS_W(".wmv") ||
+            ext == TJS_W(".mp4") || ext == TJS_W(".mpg") ||
+            ext == TJS_W(".mpeg") || ext == TJS_W(".mov") ||
+            ext == TJS_W(".flv");
+
+        if(unsupportedVideo) {
+            bmp = new tTVPBitmap(1, 1, 32);
+            void *bits = bmp->GetScanLine(0);
+            if(bits) memset(bits, 0, 4);
+        } else {
+            if(mode == glmNormal && keyidx == TVP_clNone && !desw && !desh) {
+                texture = TVPInternalLoadTexture(nname, &mi, &pn);
+            }
+            if(!texture) {
+                bmp = TVPInternalLoadBitmap(nname, keyidx, desw, desh, &mi,
+                                            mode, &pn);
+            }
         }
 
         if(provincename)
@@ -2435,8 +2470,8 @@ void TVPSetGraphicCacheLimit(tjs_uint64 limit) {
         TVPGraphicCacheEnabled = true;
     }
 
-    if(TVPGraphicCacheLimit > 512 * 1024 * 1024) // max for 512M
-        TVPGraphicCacheLimit = 512 * 1024 * 1024;
+    if(TVPGraphicCacheLimit > 256 * 1024 * 1024)
+        TVPGraphicCacheLimit = 256 * 1024 * 1024;
 
     TVPCheckGraphicCacheLimit();
 }

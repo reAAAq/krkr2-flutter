@@ -285,6 +285,7 @@ extern void TVPSetGraphicCacheLimit(tjs_uint64 limit);
 // limit == 0 disables the cache system.
 // limit == -1 sets the limit to TVPGraphicCacheSystemLimit
 extern tjs_uint64 TVPGetGraphicCacheLimit();
+extern tjs_uint64 TVPGetGraphicCacheTotalBytes();
 
 extern tjs_uint64 TVPGraphicCacheSystemLimit;
 // maximum possible value of Graphic Cache Limit

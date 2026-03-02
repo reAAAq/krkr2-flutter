@@ -22,9 +22,11 @@
 #include "tjsDebug.h"
 #include "tjsOctPack.h"
 #include "tjsGlobalStringMap.h"
+#include <chrono>
 #include <csignal>
 #include <set>
 #include <mutex>
+#include <unordered_map>
 
 #include <thread>
 #include <fmt/format.h>
@@ -780,6 +782,26 @@ namespace TJS {
     void
     tTJSInterCodeContext::DisplayExceptionGeneratedCode(tjs_int codepos,
                                                         const tTJSVariant *ra) {
+        {
+            static std::unordered_map<uintptr_t, uint64_t> recentDumps;
+            auto now = std::chrono::steady_clock::now().time_since_epoch();
+            uint64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
+            uintptr_t key = reinterpret_cast<uintptr_t>(Block) ^ static_cast<uintptr_t>(codepos);
+            auto it = recentDumps.find(key);
+            if(it != recentDumps.end() && nowMs - it->second < 10000) {
+                return;
+            }
+            recentDumps[key] = nowMs;
+            if(recentDumps.size() > 256) {
+                for(auto ri = recentDumps.begin(); ri != recentDumps.end();) {
+                    if(nowMs - ri->second > 30000)
+                        ri = recentDumps.erase(ri);
+                    else
+                        ++ri;
+                }
+            }
+        }
+
         tTJS *tjs = Block->GetTJS();
         ttstr info{ fmt::format(
             "==== An exception occurred at {}, VM ip = {} ==== ",
@@ -1404,6 +1426,10 @@ namespace TJS {
 
         tTJSVariant *ra_code2 = TJS_GET_VM_REG_ADDR(ra, code[2]);
         tTJSVariantType type = ra_code2->Type();
+        if(type == tvtVoid) {
+            TJS_GET_VM_REG_ADDR(ra, code[1])->Clear();
+            return;
+        }
         if(type == tvtString) {
             GetStringProperty(TJS_GET_VM_REG_ADDR(ra, code[1]), ra_code2,
                               TJS_GET_VM_REG(DataArea, code[3]));
@@ -1464,6 +1490,10 @@ namespace TJS {
     void tTJSInterCodeContext::GetProperty(tTJSVariant *ra,
                                            const tjs_int32 *code) {
         // ra[code[1]] = * ra[code[2]]
+        if(TJS_GET_VM_REG_ADDR(ra, code[2])->Type() == tvtVoid) {
+            TJS_GET_VM_REG_ADDR(ra, code[1])->Clear();
+            return;
+        }
         tTJSVariantClosure clo =
             TJS_GET_VM_REG_ADDR(ra, code[2])->AsObjectClosureNoAddRef();
         tjs_error hr =
@@ -1494,6 +1524,10 @@ namespace TJS {
 
         tTJSVariant *ra_code2 = TJS_GET_VM_REG_ADDR(ra, code[2]);
         tTJSVariantType type = ra_code2->Type();
+        if(type == tvtVoid) {
+            TJS_GET_VM_REG_ADDR(ra, code[1])->Clear();
+            return;
+        }
         if(type == tvtString) {
             GetStringProperty(TJS_GET_VM_REG_ADDR(ra, code[1]), ra_code2,
                               TJS_GET_VM_REG(ra, code[3]));
@@ -2155,7 +2189,11 @@ namespace TJS {
 
         tTJSVariantType type = TJS_GET_VM_REG(ra, code[2]).Type();
         tTJSVariant *name = TJS_GET_VM_REG_ADDR(DataArea, code[3]);
-        if(type == tvtString) {
+        if(type == tvtVoid) {
+            if(code[1])
+                TJS_GET_VM_REG_ADDR(ra, code[1])->Clear();
+            hr = TJS_S_OK;
+        } else if(type == tvtString) {
             ProcessStringFunction(
                 name->GetString(), TJS_GET_VM_REG(ra, code[2]), pass_args,
                 pass_args_count,

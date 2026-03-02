@@ -37,6 +37,7 @@ set(VISUAL_SOURCE_FILES
     ${VISUAL_PATH}/BitmapLayerTreeOwner.cpp
     ${VISUAL_PATH}/BitmapIntf.cpp
     ${VISUAL_PATH}/argb.cpp
+    ${VISUAL_PATH}/LoadAMV.cpp
 
     ${VISUAL_PATH}/gl/blend_function.cpp
     ${VISUAL_PATH}/gl/ResampleImage.cpp
@@ -133,6 +134,9 @@ target_link_libraries(${PROJECT_NAME} PRIVATE Freetype::Freetype)
 
 find_package(PNG REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE PNG::PNG)
+
+find_package(ZLIB REQUIRED)
+target_link_libraries(${PROJECT_NAME} PRIVATE ZLIB::ZLIB)
 
 # Highway SIMD optimization module
 add_subdirectory(simd)
