@@ -1,6 +1,8 @@
 #include "tjs.h"
 #include "ncbind.hpp"
 #include "ScriptMgnIntf.h"
+#include "LayerImpl.h"
+#include "RenderManager.h"
 #include <spdlog/spdlog.h>
 #include <unordered_map>
 #include <vector>
@@ -903,9 +905,12 @@ public:
         return true;
     }
 
-    void Bind() {
+    void Bind(GLint currentFbo = -1) {
         if (!fbo_) return;
-        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFbo_);
+        if (currentFbo >= 0)
+            prevFbo_ = currentFbo;
+        else
+            glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFbo_);
         glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
         glViewport(0, 0, width_, height_);
         glClearColor(0.f, 0.f, 0.f, 0.f);
@@ -915,6 +920,8 @@ public:
     void Unbind() {
         glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(prevFbo_));
     }
+
+    GLint GetPrevFbo() const { return prevFbo_; }
 
     bool ReadPixels(std::vector<uint8_t> &buf) {
         if (!fbo_) return false;
@@ -969,37 +976,42 @@ static iTJSDispatch2 *FindLayerInParams(tjs_int n, tTJSVariant **p) {
 // ---------------------------------------------------------------------------
 // GPU fast path: blit FBO → Layer's native GL texture via glBlitFramebuffer.
 // Returns true if GPU path was used, false if not available.
+// Uses native C++ calls instead of TJS dispatch for performance.
 // ---------------------------------------------------------------------------
 static bool CopyFBOToLayerGPU(GLuint srcFbo, GLsizei srcW, GLsizei srcH,
-                              iTJSDispatch2 *layer, GLint prevFbo) {
-    tTJSVariant vTex, vIW, vIH;
-    if (TJS_FAILED(layer->PropGet(0, TJS_W("mainImageGLTexture"), nullptr, &vTex, layer)))
-        return false;
-    GLuint layerTexId = static_cast<GLuint>(static_cast<tTVInteger>(vTex));
+                              tTJSNI_Layer *layerNI, GLint prevFbo) {
+    tTVPBaseTexture *img = layerNI->GetMainImage();
+    if (!img) return false;
+    auto *tex = img->GetTexture();
+    if (!tex) return false;
+
+    GLuint layerTexId = tex->GetNativeGLTextureId();
     if (layerTexId == 0) return false;
 
-    layer->PropGet(0, TJS_W("mainImageGLTextureInternalWidth"), nullptr, &vIW, layer);
-    layer->PropGet(0, TJS_W("mainImageGLTextureInternalHeight"), nullptr, &vIH, layer);
-    GLsizei intW = static_cast<GLsizei>(static_cast<tTVInteger>(vIW));
-    GLsizei intH = static_cast<GLsizei>(static_cast<tTVInteger>(vIH));
+    GLsizei intW = static_cast<GLsizei>(tex->GetInternalWidth());
+    GLsizei intH = static_cast<GLsizei>(tex->GetInternalHeight());
     if (intW <= 0 || intH <= 0) return false;
 
-    tTJSVariant vW, vH;
-    layer->PropGet(0, TJS_W("imageWidth"), nullptr, &vW, layer);
-    layer->PropGet(0, TJS_W("imageHeight"), nullptr, &vH, layer);
-    GLsizei layerW = static_cast<GLsizei>(static_cast<tTVInteger>(vW));
-    GLsizei layerH = static_cast<GLsizei>(static_cast<tTVInteger>(vH));
+    GLsizei layerW = static_cast<GLsizei>(layerNI->GetWidth());
+    GLsizei layerH = static_cast<GLsizei>(layerNI->GetHeight());
 
     static GLuint s_dstFbo = 0;
+    static GLuint s_lastAttachedTex = 0;
 
     if (!s_dstFbo) glGenFramebuffers(1, &s_dstFbo);
 
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_dstFbo);
-    glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                           GL_TEXTURE_2D, layerTexId, 0);
-    if (glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(prevFbo));
-        return false;
+    if (layerTexId != s_lastAttachedTex) {
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_dstFbo);
+        glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                               GL_TEXTURE_2D, layerTexId, 0);
+        if (glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+            s_lastAttachedTex = 0;
+            glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(prevFbo));
+            return false;
+        }
+        s_lastAttachedTex = layerTexId;
+    } else {
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_dstFbo);
     }
 
     glBindFramebuffer(GL_READ_FRAMEBUFFER, srcFbo);
@@ -1007,20 +1019,23 @@ static bool CopyFBOToLayerGPU(GLuint srcFbo, GLsizei srcW, GLsizei srcH,
     GLsizei blitW = (layerW < srcW) ? layerW : srcW;
     GLsizei blitH = (layerH < srcH) ? layerH : srcH;
 
+#if defined(__ANDROID__)
+    // Android: no Y flip so Live2D appears right-side up
+    glBlitFramebuffer(0, 0, blitW, blitH, 0, 0, blitW, blitH,
+                      GL_COLOR_BUFFER_BIT, GL_NEAREST);
+#else
     glBlitFramebuffer(0, 0, blitW, blitH,
                       0, blitH, blitW, 0,
                       GL_COLOR_BUFFER_BIT, GL_NEAREST);
+#endif
 
     glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(prevFbo));
 
-    tjs_uint hint = 0;
-    layer->FuncCall(0, TJS_W("invalidateGLTextureCache"), &hint, nullptr, 0, nullptr, layer);
+    tex->InvalidatePixelCache();
+    layerNI->SetImageModified(true);
 
-    tTJSVariant vx(static_cast<tjs_int>(0)), vy(static_cast<tjs_int>(0)),
-                vw(static_cast<tjs_int>(blitW)), vh(static_cast<tjs_int>(blitH));
-    tTJSVariant *args[] = { &vx, &vy, &vw, &vh };
-    hint = 0;
-    layer->FuncCall(0, TJS_W("update"), &hint, nullptr, 4, args, layer);
+    tTVPRect rc(0, 0, blitW, blitH);
+    layerNI->Update(rc);
     return true;
 }
 
@@ -1035,8 +1050,12 @@ static void ConvertRGBA_to_BGRA(const uint8_t *src, GLsizei srcW, GLsizei srcH,
     const int simdCopyW = copyW & ~(simdWidth - 1);
 #endif
     for (tjs_int y = 0; y < copyH; ++y) {
-        const uint8_t *srcRow = src +
-            static_cast<size_t>(srcH - 1 - y) * srcW * 4;
+#if defined(__ANDROID__)
+        const size_t srcRowIdx = static_cast<size_t>(y) * srcW * 4;  // no Y flip on Android
+#else
+        const size_t srcRowIdx = static_cast<size_t>(srcH - 1 - y) * srcW * 4;
+#endif
+        const uint8_t *srcRow = src + srcRowIdx;
         uint8_t *dstRow = dst + static_cast<size_t>(y) * pitch;
         tjs_int x = 0;
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
@@ -1110,18 +1129,12 @@ struct PBOState {
 // Uses PBO double-buffering when available (GLES 3.0+) to avoid stalls.
 // ---------------------------------------------------------------------------
 static bool CopyFBOToLayerCPU(GLuint fbo, GLsizei srcW, GLsizei srcH,
-                              iTJSDispatch2 *layer, GLint prevFbo) {
-    tTJSVariant vW, vH, vBuf, vPitch;
-    layer->PropGet(0, TJS_W("imageWidth"), nullptr, &vW, layer);
-    layer->PropGet(0, TJS_W("imageHeight"), nullptr, &vH, layer);
-    layer->PropGet(0, TJS_W("mainImageBufferForWrite"), nullptr, &vBuf, layer);
-    layer->PropGet(0, TJS_W("mainImageBufferPitch"), nullptr, &vPitch, layer);
-
-    tjs_int layerW = static_cast<tjs_int>(vW);
-    tjs_int layerH = static_cast<tjs_int>(vH);
+                              tTJSNI_Layer *layerNI, GLint prevFbo) {
+    tjs_int layerW = static_cast<tjs_int>(layerNI->GetWidth());
+    tjs_int layerH = static_cast<tjs_int>(layerNI->GetHeight());
     auto *dst = reinterpret_cast<uint8_t *>(
-        static_cast<tjs_intptr_t>(static_cast<tTVInteger>(vBuf)));
-    tjs_int pitch = static_cast<tjs_int>(vPitch);
+        layerNI->GetMainImagePixelBufferForWrite());
+    tjs_int pitch = layerNI->GetMainImagePixelBufferPitch();
     if (!dst || layerW <= 0 || layerH <= 0) return false;
 
     tjs_int copyW = (layerW < srcW) ? layerW : srcW;
@@ -1175,23 +1188,27 @@ static bool CopyFBOToLayerCPU(GLuint fbo, GLsizei srcW, GLsizei srcH,
         glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
     }
 
-    tTJSVariant vx(static_cast<tjs_int>(0)), vy(static_cast<tjs_int>(0)),
-                vw(copyW), vh(copyH);
-    tTJSVariant *args[] = { &vx, &vy, &vw, &vh };
-    tjs_uint hint = 0;
-    layer->FuncCall(0, TJS_W("update"), &hint, nullptr, 4, args, layer);
+    tTVPRect rc(0, 0, copyW, copyH);
+    layerNI->Update(rc);
     return true;
 }
 
 // ---------------------------------------------------------------------------
 // Copy FBO → Layer with automatic GPU/CPU path selection.
+// Resolves native Layer instance once and passes to GPU/CPU paths.
 // ---------------------------------------------------------------------------
 bool CopyFBOToLayer(GLuint fbo, GLsizei srcW, GLsizei srcH,
                     iTJSDispatch2 *layer, GLint prevFbo) {
     if (!fbo || srcW <= 0 || srcH <= 0 || !layer) return false;
     if (prevFbo < 0) glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFbo);
-    if (CopyFBOToLayerGPU(fbo, srcW, srcH, layer, prevFbo)) return true;
-    return CopyFBOToLayerCPU(fbo, srcW, srcH, layer, prevFbo);
+
+    tTJSNI_Layer *layerNI = nullptr;
+    if (TJS_FAILED(layer->NativeInstanceSupport(TJS_NIS_GETINSTANCE,
+            tTJSNC_Layer::ClassID, (iTJSNativeInstance **)&layerNI)) || !layerNI)
+        return false;
+
+    if (CopyFBOToLayerGPU(fbo, srcW, srcH, layerNI, prevFbo)) return true;
+    return CopyFBOToLayerCPU(fbo, srcW, srcH, layerNI, prevFbo);
 }
 
 // Global registered Layer — set by entryUpdateObject, accessed by krkrlive2d.cpp
@@ -1199,14 +1216,6 @@ static iTJSDispatch2 *g_registeredLayer = nullptr;
 iTJSDispatch2 *KrkrGLES_GetRegisteredLayer() { return g_registeredLayer; }
 
 namespace { // reopen anonymous namespace
-
-// Wrapper for OffscreenFBO (used when the module's own FBO has content)
-static bool CopyPixelsToLayer(OffscreenFBO &fbo, tjs_int numparams,
-                              tTJSVariant **param) {
-    iTJSDispatch2 *layer = FindLayerInParams(numparams, param);
-    if (!layer) return false;
-    return CopyFBOToLayer(fbo.GetFBO(), fbo.GetWidth(), fbo.GetHeight(), layer, -1);
-}
 
 // ---------------------------------------------------------------------------
 // TJS expression helpers
@@ -1413,12 +1422,15 @@ public:
     static tjs_error copyLayerCb(tTJSVariant *r, tjs_int n, tTJSVariant **p, GLESModule *s) {
         iTJSDispatch2 *layer = FindLayerInParams(n, p);
         if (layer) {
-            if (s && s->fbo_.GetFBO())
-                CopyPixelsToLayer(s->fbo_, n, p);
-            else if (g_live2dRenderTarget.fbo)
+            if (s && s->fbo_.GetFBO()) {
+                GLint prevFbo = s->fbo_.GetPrevFbo();
+                CopyFBOToLayer(s->fbo_.GetFBO(), s->fbo_.GetWidth(),
+                               s->fbo_.GetHeight(), layer, prevFbo);
+            } else if (g_live2dRenderTarget.fbo) {
                 CopyFBOToLayer(g_live2dRenderTarget.fbo,
                                g_live2dRenderTarget.width,
                                g_live2dRenderTarget.height, layer, -1);
+            }
         }
         if (r) *r = true; return TJS_S_OK;
     }
