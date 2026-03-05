@@ -5,6 +5,7 @@ class GameInfo {
   GameInfo({
     required this.path,
     this.title,
+    this.developer,
     this.lastPlayed,
     this.coverPath,
     this.playDurationSeconds,
@@ -15,6 +16,9 @@ class GameInfo {
 
   /// Display title. Falls back to the directory name if null.
   String? title;
+
+  /// Developer / producer name (e.g. from scraping).
+  String? developer;
 
   /// Last time the game was launched.
   DateTime? lastPlayed;
@@ -46,6 +50,7 @@ class GameInfo {
   Map<String, dynamic> toJson() => {
         'path': path,
         'title': title,
+        'developer': developer,
         'lastPlayed': lastPlayed?.toIso8601String(),
         'coverPath': coverPath,
         'playDurationSeconds': playDurationSeconds,
@@ -54,6 +59,7 @@ class GameInfo {
   factory GameInfo.fromJson(Map<String, dynamic> json) => GameInfo(
         path: json['path'] as String,
         title: json['title'] as String?,
+        developer: json['developer'] as String?,
         lastPlayed: json['lastPlayed'] != null
             ? DateTime.tryParse(json['lastPlayed'] as String)
             : null,

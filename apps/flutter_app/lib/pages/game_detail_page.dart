@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -363,68 +364,128 @@ class _GameDetailPageState extends State<GameDetailPage> {
         if (!didPop) _pop();
       },
       child: Scaffold(
-        body: CustomScrollView(
-          slivers: [
-            _buildCoverAppBar(colorScheme),
-            SliverToBoxAdapter(child: _buildInfoSection(l10n, textTheme, colorScheme)),
-            SliverToBoxAdapter(child: _buildLaunchButton(l10n)),
-            SliverToBoxAdapter(child: _buildManageSection(l10n, colorScheme)),
-            SliverToBoxAdapter(child: _buildDangerSection(l10n, colorScheme)),
-            const SliverPadding(padding: EdgeInsets.only(bottom: 32)),
+        extendBodyBehindAppBar: true,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: _pop,
+          ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.image_outlined),
+              tooltip: l10n.setCover,
+              onPressed: _setCover,
+            ),
           ],
+        ),
+        body: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildTopHeroSection(colorScheme, textTheme),
+              Transform.translate(
+                offset: const Offset(0, -_sheetRadius),
+                child: _buildBottomSheet(colorScheme, l10n, textTheme),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildCoverAppBar(ColorScheme colorScheme) {
-    return SliverAppBar(
-      expandedHeight: 260,
-      pinned: true,
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back),
-        onPressed: _pop,
-      ),
-      flexibleSpace: FlexibleSpaceBar(
-        background: Stack(
-          fit: StackFit.expand,
-          children: [
-            if (_hasCover)
-              Image.file(
-                File(game.coverPath!),
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _buildPlaceholderBar(colorScheme),
-              )
-            else
-              _buildPlaceholderBar(colorScheme),
-            const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  stops: [0.0, 0.3, 1.0],
-                  colors: [
-                    Colors.black38,
-                    Colors.transparent,
-                    Colors.black26,
-                  ],
+  static const double _coverCardAspectRatio = 3 / 4;
+  static const double _coverCardWidth = 140;
+
+  /// 下方信息块顶部圆角，并与顶部区域留出重叠
+  static const double _sheetRadius = 24;
+
+  /// 顶部一块：高度由内容决定（卡片+标题+开发者），背景毛玻璃随该区域动态填充
+  Widget _buildTopHeroSection(ColorScheme colorScheme, TextTheme textTheme) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Positioned.fill(
+          child: _buildBlurredBlock(colorScheme),
+        ),
+        Padding(
+          padding: EdgeInsets.only(
+            top: MediaQuery.paddingOf(context).top + kToolbarHeight + 24,
+            left: 16,
+            right: 16,
+            bottom: _sheetRadius + 16,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Center(child: _buildTopCoverCard(colorScheme)),
+              const SizedBox(height: 16),
+              Center(
+                child: Text(
+                  game.displayTitle,
+                  style: textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: colorScheme.onSurface,
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.image_outlined),
-          tooltip: AppLocalizations.of(context)!.setCover,
-          onPressed: _setCover,
+              if (game.developer != null && game.developer!.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Center(
+                  child: Text(
+                    game.developer!,
+                    style: textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildPlaceholderBar(ColorScheme colorScheme) {
+  /// 仅顶部一块的放大封面 + 毛玻璃
+  Widget _buildBlurredBlock(ColorScheme colorScheme) {
+    return _hasCover
+        ? Stack(
+            fit: StackFit.expand,
+            children: [
+              Positioned.fill(
+                child: Image.file(
+                  File(game.coverPath!),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) =>
+                      _buildPlaceholderBackground(colorScheme),
+                ),
+              ),
+              Positioned.fill(
+                child: ClipRect(
+                  child: BackdropFilter(
+                    filter: ui.ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+                    child: Container(
+                      color: colorScheme.shadow.withValues(alpha: 0.35),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          )
+        : _buildPlaceholderBackground(colorScheme);
+  }
+
+  Widget _buildPlaceholderBackground(ColorScheme colorScheme) {
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -436,12 +497,74 @@ class _GameDetailPageState extends State<GameDetailPage> {
           ],
         ),
       ),
-      child: Center(
-        child: Icon(
-          Icons.videogame_asset,
-          size: 72,
-          color: colorScheme.primary.withValues(alpha: 0.5),
-        ),
+    );
+  }
+
+  /// 顶部居中卡片：仅封面
+  Widget _buildTopCoverCard(ColorScheme colorScheme) {
+    final height = _coverCardWidth / _coverCardAspectRatio;
+    return Card(
+      elevation: 12,
+      shadowColor: colorScheme.shadow.withValues(alpha: 0.4),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: SizedBox(
+        width: _coverCardWidth,
+        height: height,
+        child: _hasCover
+            ? Image.file(
+                File(game.coverPath!),
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) =>
+                    _buildCoverPlaceholder(colorScheme, height),
+              )
+            : _buildCoverPlaceholder(colorScheme, height),
+      ),
+    );
+  }
+
+  Widget _buildCoverPlaceholder(ColorScheme colorScheme, double height) {
+    return Container(
+      width: _coverCardWidth,
+      height: height,
+      color: colorScheme.surfaceContainerHigh,
+      child: Icon(
+        Icons.videogame_asset,
+        size: 48,
+        color: colorScheme.primary.withValues(alpha: 0.5),
+      ),
+    );
+  }
+
+  /// 下方信息区：实色背景保证可读
+  Widget _buildBottomSheet(
+    ColorScheme colorScheme,
+    AppLocalizations l10n,
+    TextTheme textTheme,
+  ) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(_sheetRadius)),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.shadow.withValues(alpha: 0.08),
+            blurRadius: 12,
+            offset: const Offset(0, -4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          _buildInfoSection(l10n, textTheme, colorScheme),
+          _buildLaunchButton(l10n),
+          _buildManageSection(l10n, colorScheme),
+          _buildDangerSection(l10n, colorScheme),
+          const SizedBox(height: 32),
+        ],
       ),
     );
   }
@@ -454,13 +577,6 @@ class _GameDetailPageState extends State<GameDetailPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            game.displayTitle,
-            style: textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 12),
           _infoRow(
             Icons.folder_outlined,
             game.path,
