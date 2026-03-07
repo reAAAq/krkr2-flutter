@@ -8,7 +8,7 @@
   <img src="https://img.shields.io/badge/engine-KiriKiri2-blue" alt="Engine">
   <img src="https://img.shields.io/badge/framework-Flutter-02569B" alt="Flutter">
   <img src="https://img.shields.io/badge/graphics-ANGLE-red" alt="ANGLE">
-  <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
+  <img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="License">
 </p>
 
 ---
@@ -72,4 +72,4 @@
 | P0 | TJS2 VM 解释器优化 (computed goto) | 📋 计划中 |
 ## 许可证
 
-本项目基于 MIT 许可证开源，详见 [LICENSE](./LICENSE)。
+本项目基于 GNU General Public License v3.0 (GPL-3.0) 开源，详见 [LICENSE](./LICENSE)。
