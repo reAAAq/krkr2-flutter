@@ -374,6 +374,14 @@ static void PreRegistCallback() {
     if(var == nullptr) {
         var = new VarStorage();
         TVPRegisterStorageMedia(var);
+
+        iTJSDispatch2 *global = TVPGetScriptDispatch();
+        if(global) {
+            tTJSVariant loaded(true);
+            global->PropSet(TJS_MEMBERENSURE, TJS_W("varfileLoaded"), nullptr,
+                            &loaded, global);
+            global->Release();
+        }
     }
 }
 
