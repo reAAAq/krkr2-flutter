@@ -76,6 +76,86 @@ class EngineSurfaceState extends State<EngineSurface> {
   static const int _modifierRight = 1 << 4;
   static const int _modifierMiddle = 1 << 5;
 
+  // Windows virtual-key values used by the engine's input layer.
+  // 引擎输入层当前按 Windows VK 语义消费 key_code，这里统一做宿主侧映射。
+  static final Map<LogicalKeyboardKey, int> _logicalToVirtualKey =
+      <LogicalKeyboardKey, int>{
+        LogicalKeyboardKey.backspace: 0x08,
+        LogicalKeyboardKey.tab: 0x09,
+        LogicalKeyboardKey.enter: 0x0D,
+        LogicalKeyboardKey.numpadEnter: 0x0D,
+        LogicalKeyboardKey.shift: 0x10,
+        LogicalKeyboardKey.shiftLeft: 0xA0,
+        LogicalKeyboardKey.shiftRight: 0xA1,
+        LogicalKeyboardKey.control: 0x11,
+        LogicalKeyboardKey.controlLeft: 0xA2,
+        LogicalKeyboardKey.controlRight: 0xA3,
+        LogicalKeyboardKey.alt: 0x12,
+        LogicalKeyboardKey.altLeft: 0xA4,
+        LogicalKeyboardKey.altRight: 0xA5,
+        LogicalKeyboardKey.pause: 0x13,
+        LogicalKeyboardKey.capsLock: 0x14,
+        LogicalKeyboardKey.escape: 0x1B,
+        LogicalKeyboardKey.goBack: 0x1B,
+        LogicalKeyboardKey.space: 0x20,
+        LogicalKeyboardKey.pageUp: 0x21,
+        LogicalKeyboardKey.pageDown: 0x22,
+        LogicalKeyboardKey.end: 0x23,
+        LogicalKeyboardKey.home: 0x24,
+        LogicalKeyboardKey.arrowLeft: 0x25,
+        LogicalKeyboardKey.arrowUp: 0x26,
+        LogicalKeyboardKey.arrowRight: 0x27,
+        LogicalKeyboardKey.arrowDown: 0x28,
+        LogicalKeyboardKey.select: 0x29,
+        LogicalKeyboardKey.printScreen: 0x2C,
+        LogicalKeyboardKey.insert: 0x2D,
+        LogicalKeyboardKey.delete: 0x2E,
+        LogicalKeyboardKey.metaLeft: 0x5B,
+        LogicalKeyboardKey.metaRight: 0x5C,
+        LogicalKeyboardKey.contextMenu: 0x5D,
+        LogicalKeyboardKey.numpad0: 0x60,
+        LogicalKeyboardKey.numpad1: 0x61,
+        LogicalKeyboardKey.numpad2: 0x62,
+        LogicalKeyboardKey.numpad3: 0x63,
+        LogicalKeyboardKey.numpad4: 0x64,
+        LogicalKeyboardKey.numpad5: 0x65,
+        LogicalKeyboardKey.numpad6: 0x66,
+        LogicalKeyboardKey.numpad7: 0x67,
+        LogicalKeyboardKey.numpad8: 0x68,
+        LogicalKeyboardKey.numpad9: 0x69,
+        LogicalKeyboardKey.numpadMultiply: 0x6A,
+        LogicalKeyboardKey.numpadAdd: 0x6B,
+        LogicalKeyboardKey.numpadSubtract: 0x6D,
+        LogicalKeyboardKey.numpadDecimal: 0x6E,
+        LogicalKeyboardKey.numpadDivide: 0x6F,
+        LogicalKeyboardKey.f1: 0x70,
+        LogicalKeyboardKey.f2: 0x71,
+        LogicalKeyboardKey.f3: 0x72,
+        LogicalKeyboardKey.f4: 0x73,
+        LogicalKeyboardKey.f5: 0x74,
+        LogicalKeyboardKey.f6: 0x75,
+        LogicalKeyboardKey.f7: 0x76,
+        LogicalKeyboardKey.f8: 0x77,
+        LogicalKeyboardKey.f9: 0x78,
+        LogicalKeyboardKey.f10: 0x79,
+        LogicalKeyboardKey.f11: 0x7A,
+        LogicalKeyboardKey.f12: 0x7B,
+        LogicalKeyboardKey.f13: 0x7C,
+        LogicalKeyboardKey.f14: 0x7D,
+        LogicalKeyboardKey.f15: 0x7E,
+        LogicalKeyboardKey.f16: 0x7F,
+        LogicalKeyboardKey.f17: 0x80,
+        LogicalKeyboardKey.f18: 0x81,
+        LogicalKeyboardKey.f19: 0x82,
+        LogicalKeyboardKey.f20: 0x83,
+        LogicalKeyboardKey.f21: 0x84,
+        LogicalKeyboardKey.f22: 0x85,
+        LogicalKeyboardKey.f23: 0x86,
+        LogicalKeyboardKey.f24: 0x87,
+        LogicalKeyboardKey.numLock: 0x90,
+        LogicalKeyboardKey.scrollLock: 0x91,
+      };
+
   final FocusNode _focusNode = FocusNode(debugLabel: 'engine-surface-focus');
   bool _vsyncScheduled = false;
   bool _frameInFlight = false;
@@ -764,6 +844,59 @@ class EngineSurfaceState extends State<EngineSurface> {
     return codepoint;
   }
 
+  /// Translate Flutter keyboard events into the Windows-VK-style key codes
+  /// expected by the current engine_api / EngineLoop contract.
+  /// 将 Flutter 键盘事件转换为当前 engine_api / EngineLoop 约定使用的
+  /// Windows VK 风格键码。
+  int? _toEngineVirtualKeyCode(KeyEvent event) {
+    final int? mapped = _logicalToVirtualKey[event.logicalKey];
+    if (mapped != null) {
+      return mapped;
+    }
+
+    final String label = event.logicalKey.keyLabel;
+    if (label.length != 1) {
+      return null;
+    }
+
+    final int rune = label.runes.single;
+    if (rune >= 0x30 && rune <= 0x39) {
+      return rune;
+    }
+
+    final int uppercase = (rune >= 0x61 && rune <= 0x7A) ? (rune - 0x20) : rune;
+    if (uppercase >= 0x41 && uppercase <= 0x5A) {
+      return uppercase;
+    }
+
+    switch (rune) {
+      case 0x60:
+        return 0xC0; // `
+      case 0x2D:
+        return 0xBD; // -
+      case 0x3D:
+        return 0xBB; // =
+      case 0x5B:
+        return 0xDB; // [
+      case 0x5D:
+        return 0xDD; // ]
+      case 0x5C:
+        return 0xDC; // backslash
+      case 0x3B:
+        return 0xBA; // ;
+      case 0x27:
+        return 0xDE; // '
+      case 0x2C:
+        return 0xBC; // ,
+      case 0x2E:
+        return 0xBE; // .
+      case 0x2F:
+        return 0xBF; // /
+      default:
+        return null;
+    }
+  }
+
   EngineInputEventData _buildPointerEventData({
     required int type,
     required PointerEvent event,
@@ -883,18 +1016,20 @@ class EngineSurfaceState extends State<EngineSurface> {
     final int type = isDown
         ? EngineInputEventType.keyDown
         : EngineInputEventType.keyUp;
-    final int keyCode = event.logicalKey.keyId & 0xFFFFFFFF;
+    final int? keyCode = _toEngineVirtualKeyCode(event);
     final int modifiers = _buildModifierMask();
-    unawaited(
-      _sendInputEvent(
-        EngineInputEventData(
-          type: type,
-          timestampMicros: event.timeStamp.inMicroseconds,
-          keyCode: keyCode,
-          modifiers: modifiers,
+    if (keyCode != null) {
+      unawaited(
+        _sendInputEvent(
+          EngineInputEventData(
+            type: type,
+            timestampMicros: event.timeStamp.inMicroseconds,
+            keyCode: keyCode,
+            modifiers: modifiers,
+          ),
         ),
-      ),
-    );
+      );
+    }
 
     if (isDown) {
       final int? textCodepoint = _tryGetTextInputCodepoint(event, modifiers);
@@ -920,7 +1055,7 @@ class EngineSurfaceState extends State<EngineSurface> {
           EngineInputEventData(
             type: EngineInputEventType.back,
             timestampMicros: event.timeStamp.inMicroseconds,
-            keyCode: keyCode,
+            keyCode: keyCode ?? 0x1B,
             modifiers: modifiers,
           ),
         ),

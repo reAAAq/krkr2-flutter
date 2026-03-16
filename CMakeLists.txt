@@ -87,12 +87,11 @@ if(ANDROID)
         target_link_libraries(${PROJECT_NAME} PUBLIC unofficial::breakpad::libbreakpad_client)
     endif()
 elseif(LINUX)
-    add_executable(${PROJECT_NAME} ${CMAKE_CURRENT_SOURCE_DIR}/platforms/linux/main.cpp)
+    # Linux now uses Flutter as the app shell; only build engine libraries.
+    # The legacy standalone Cocos2d-x/GLFW host has been retired.
 elseif(WINDOWS)
-    add_executable(${PROJECT_NAME}
-        ${CMAKE_CURRENT_SOURCE_DIR}/platforms/windows/main.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/platforms/windows/game.rc
-    )
+    # Windows now uses Flutter as the app shell; only build engine libraries.
+    # The legacy standalone Cocos2d-x/GLFW host has been retired.
 elseif(IOS)
     # iOS uses Flutter as the app shell; only build engine libraries.
     # engine_api is built as a static library and linked into the Flutter Runner.

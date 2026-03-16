@@ -1,4 +1,4 @@
-#ifndef KRKR2_ENGINE_API_H_
+﻿#ifndef KRKR2_ENGINE_API_H_
 #define KRKR2_ENGINE_API_H_
 
 #include <stddef.h>
@@ -423,27 +423,22 @@ engine_set_render_target_surface(engine_handle_t handle, void *native_window,
 /*
  * Queries whether the last engine_tick produced a new rendered frame.
  *
- * 查询最近一次 engine_tick 是否产生了新帧。
- * out_
+ * 查询最近一次 engine_tick 是否产出了新渲染帧。
  *
- * out_
- *   - 0: no new
- * frame since last query
- *   - 0：自上次查询以来没有新帧
- *   - 1: a new frame
- * was rendered
- *   - 1：已经渲染出一帧新画面
+ * out_flag:
+ *   - 0: no new frame since the previous query
+ *   - 0：自上一次查询以来没有新帧
+ *   - 1: a new frame was rendered
+ *   - 1：产生了新渲染帧
  *
- * This is useful in IOSurface
- * mode to know when to call
- * 在 IOSurface 模式下，这个标记可用于判断何时调用
-
- * * textureFrameAvailable() on the Flutter side.
- * Flutter 侧的
- * textureFrameAvailable()。
+ * This is mainly used by zero-copy presentation paths such as IOSurface
+ * and SurfaceTexture to decide when the host should notify Flutter that a
+ * frame is available.
+ * 该标记主要供 IOSurface、SurfaceTexture 等零拷贝展示路径使用，
+ * 以便宿主侧判断何时通知 Flutter 有新帧可用。
  */
 ENGINE_API_EXPORT engine_result_t
-engine_get_frame_rendered_flag(engine_handle_t handle, uint32_t *out_);
+engine_get_frame_rendered_flag(engine_handle_t handle, uint32_t *out_flag);
 
 /*
  * Queries the graphics renderer information string.

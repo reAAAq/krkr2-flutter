@@ -242,6 +242,25 @@ namespace krkr {
     }
 
     void EGLContextManager::Destroy() {
+        if(display_ != EGL_NO_DISPLAY && context_ != EGL_NO_CONTEXT) {
+            // Release IOSurface-backed GL/EGL objects while the context is
+            // still alive; otherwise the shared-texture path can leak on host
+            // runtime shutdown.
+            MakeCurrent();
+            DestroyIOSurfaceResources();
+        } else {
+            // If EGL is already gone, at least clear the bookkeeping state so
+            // callers don't observe stale IOSurface attachment data.
+            iosurface_pbuffer_ = EGL_NO_SURFACE;
+            iosurface_fbo_ = 0;
+            iosurface_texture_ = 0;
+            iosurface_tex_target_ = 0;
+            iosurface_rbo_depth_ = 0;
+            iosurface_width_ = 0;
+            iosurface_height_ = 0;
+            iosurface_id_ = 0;
+        }
+
         DestroyNativeWindowResources();
         if(display_ != EGL_NO_DISPLAY) {
             eglMakeCurrent(display_, EGL_NO_SURFACE, EGL_NO_SURFACE,
