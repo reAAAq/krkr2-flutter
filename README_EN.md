@@ -47,8 +47,8 @@ The screenshot below shows the current running state on macOS with the Metal bac
 | engine_api Bridge Layer | ✅ Done | Exports `engine_create` / `engine_tick` / `engine_destroy` C APIs |
 | Flutter Plugin | ✅ Mostly Done | Platform Channel communication, Texture bridge |
 | Zero-Copy Texture Rendering | ✅ Mostly Done | Zero-copy engine render frame sharing to Flutter via platform-native texture mechanisms |
-| Flutter Debug UI | ✅ Mostly Done | FPS control, engine lifecycle management, rendering status monitor |
-| Input Event Forwarding | ✅ Mostly Done | Mouse / touch event coordinate mapping and forwarding to the engine |
+| Flutter Debug UI | ✅ Mostly Done | FPS control, engine lifecycle management, startup log view, rendering status monitor, backend/surface debug summary |
+| Input Event Forwarding | ✅ Mostly Done | Mouse / touch coordinate mapping, keyboard modifier forwarding, BMP text input forwarding |
 | Engine Performance Optimization | 🔨 In Progress | SIMD pixel blending, GPU compositing pipeline, VM interpreter optimization, etc. |
 | Game Compatibility | 🔨 In Progress | Completing the script parser, adding plugins. Current goal: match compatibility with Z's closed-source build |
 | Original krkr2 Emulator Feature Porting | 📋 Planned | Gradually port original krkr2 emulator features to the new architecture |
@@ -70,6 +70,13 @@ The screenshot below shows the current running state on macOS with the Metal bac
 | P0 | Pixel Blend SIMD ([Highway](https://github.com/google/highway)) | ✅ Done |
 | P0 | Full GPU Compositing Pipeline | 🔨 In Progress |
 | P0 | TJS2 VM Interpreter (computed goto) | 📋 Planned |
+
+## Recent Updates
+
+- Completed low-risk launcher/runtime polish around the Flutter host path.
+- Added keyboard modifier forwarding and BMP text input forwarding on the Flutter engine surface.
+- Expanded the in-game debug panel with backend description, renderer info, active present path, and surface/frame size summary.
+- Kept these changes isolated from the main rendering pipeline so they are safe to land before larger GPU/Vulkan work.
 
 ## License
 

@@ -16,6 +16,7 @@ import '../widgets/engine_surface.dart';
 import '../widgets/performance_overlay.dart';
 
 /// The game running page — full-screen engine surface with auto-start flow.
+/// 游戏运行页：全屏引擎画面与自动启动流程。
 class GamePage extends StatefulWidget {
   const GamePage({
     super.key,
@@ -32,6 +33,7 @@ class GamePage extends StatefulWidget {
   final bool forceLandscape;
 
   /// If set, play duration is recorded when leaving this page.
+  /// 如果提供该对象，离开页面时会记录游玩时长。
   final GameManager? gameManager;
 
   @override
@@ -58,22 +60,25 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
   /// When true, a resume was requested while a pause transition was
   /// still in flight. The pause handler checks this on completion and
   /// triggers a resume automatically.
+  /// 为 true 表示在 pause 过程尚未完成时又收到了 resume 请求；
+  /// pause 完成后会自动补做一次 resume。
   bool _pendingLifecycleResumed = false;
 
-  // Frame rate
+  // Frame rate / 帧率控制
   int _targetFps = PrefsKeys.defaultFps;
   bool _fpsLimitEnabled = false;
 
-  // Performance overlay
+  // Performance overlay / 性能叠层
   bool _showPerfOverlay = false;
+  String _backendDescription = '';
   String _rendererInfo = '';
   final GlobalKey<EnginePerformanceOverlayState> _perfOverlayKey0 =
       GlobalKey<EnginePerformanceOverlayState>();
 
-  // Orientation
+  // Orientation / 屏幕方向
   bool _forceLandscape = true;
 
-  // State
+  // State / 页面状态
   _EnginePhase _phase = _EnginePhase.initializing;
   String? _errorMessage;
   bool _showOverlay = false;
@@ -82,7 +87,7 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
   final List<String> _logs = [];
   static const int _maxLogs = 2000;
 
-  // ScrollController for boot log auto-scroll
+  // ScrollController for boot log auto-scroll / 启动日志自动滚动控制器
   final ScrollController _bootLogScrollController = ScrollController();
   Timer? _startupPollTimer;
   bool _startupPollInFlight = false;
@@ -105,6 +110,7 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _forceLandscape = widget.forceLandscape;
     _bridge = widget.engineBridgeBuilder(ffiLibraryPath: widget.ffiLibraryPath);
+    unawaited(_loadBackendDescription());
     _loadSettings();
     _applyOrientation();
     _log('Initializing engine for: ${widget.gamePath}');
@@ -113,6 +119,8 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
     }
     // Defer engine startup until after the first frame is rendered,
     // so the boot-log UI is visible before blocking FFI calls begin.
+    // 将引擎启动延后到首帧渲染之后，这样在 FFI 调用阻塞前，
+    // 启动日志 UI 已经可以先显示出来。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         unawaited(_autoStart());
@@ -228,7 +236,7 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
     }
   }
 
-  // --- Auto-start flow: create → open → tick ---
+  // --- Auto-start flow: create → open → tick / 自动启动流程 ---
 
   String _normalizeGamePath(String raw) {
     var p = raw.trim();
@@ -236,6 +244,7 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
       p = Uri.parse(p).toFilePath();
     }
     // Engine accepts POSIX absolute paths on Android host mode.
+    // Android 宿主模式下，引擎接受 POSIX 风格绝对路径。
     if (p.startsWith('./')) {
       p = '/${p.substring(2)}';
     }
@@ -329,7 +338,8 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
         return 'Game path does not exist: $path';
       }
 
-      // Accept either startup.tjs in root or data/system/initialize.tjs
+      // Accept either startup.tjs in root or data/system/initialize.tjs.
+      // 同时接受根目录下的 startup.tjs，或 data/system/initialize.tjs。
       final startup = File('$path/startup.tjs');
       final init = File('$path/data/system/initialize.tjs');
       final initUpper = File('$path/data/system/Initialize.tjs');
@@ -362,6 +372,8 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
 
     // Yield to let the UI paint the current log state before the
     // synchronous FFI call blocks the main thread.
+    // 先让出一次事件循环，让 UI 把当前日志状态画出来，
+    // 再进入可能阻塞主线程的同步 FFI 调用。
     await Future<void>.delayed(Duration.zero);
 
     final int createResult = await _bridge.engineCreate();
@@ -374,7 +386,8 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
     }
     _log('engine_create => OK');
 
-    // Set renderer pipeline (opengl / software) before opening the game
+    // Set renderer pipeline (opengl / software) before opening the game.
+    // 在打开游戏前先把渲染管线（opengl / software）设置好。
     final prefs = await SharedPreferences.getInstance();
     final renderer =
         prefs.getString(PrefsKeys.renderer) ?? PrefsKeys.rendererOpengl;
@@ -384,7 +397,8 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
       value: renderer,
     );
 
-    // Set ANGLE backend (gles / vulkan) — Android only, others ignore
+    // Set ANGLE backend (gles / vulkan) — Android only, others ignore.
+    // 设置 ANGLE 后端（gles / vulkan）；仅 Android 使用，其他平台忽略。
     if (Platform.isAndroid) {
       final angleBackend =
           prefs.getString(PrefsKeys.angleBackend) ?? PrefsKeys.angleBackendGles;
@@ -403,6 +417,8 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
     var normalizedGamePath = _normalizeGamePath(widget.gamePath);
     // On Android, auto-detect if the user selected the data/ folder
     // itself and step up to the real game root.
+    // Android 上自动识别用户是否误选了 data/ 目录本身，
+    // 如有需要则回退到真正的游戏根目录。
     normalizedGamePath = await _adjustGamePathForAndroid(normalizedGamePath);
     _log('engine_open_game($normalizedGamePath)...');
     _log('Starting application — this may take a moment...');
@@ -414,6 +430,7 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
     }
 
     // Yield once so opening logs are painted before the async start call.
+    // 在异步启动前再让出一次事件循环，确保打开阶段日志先显示出来。
     await Future<void>.delayed(Duration.zero);
 
     final int openResult = await _bridge.engineOpenGameAsync(
@@ -428,6 +445,19 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
     }
     _log('engine_open_game_async => queued');
     _startStartupPolling();
+  }
+
+  Future<void> _loadBackendDescription() async {
+    try {
+      final String backendDescription = await _bridge.getBackendDescription();
+      if (!mounted) {
+        return;
+      }
+      setState(() => _backendDescription = backendDescription);
+    } catch (_) {
+      // Debug info is best-effort; failure here must not affect startup.
+      // 调试信息为尽力而为；拿不到也不影响主流程。
+    }
   }
 
   Future<bool> _ensureAndroidAllFilesAccess() async {
@@ -462,11 +492,13 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
     });
   }
 
-  // --- Tick loop (vsync-driven) ---
+  // --- Tick loop (vsync-driven) / 基于 vsync 的 tick 循环 ---
 
   // Track the elapsed timestamp of the last *rendered* frame so that
   // reportFrameDelta receives the true inter-frame interval instead of
   // the vsync interval (which is always ~16ms on a 60Hz display).
+  // 记录最近一次真正完成渲染的时间戳，让 reportFrameDelta 看到的是
+  // 实际渲染间隔，而不是固定的 vsync 间隔。
   Duration _lastRenderedElapsed = Duration.zero;
 
   void _startTickLoop() {
@@ -511,12 +543,15 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
         // Read the rendered flag exactly once. We pass it to pollFrame()
         // so that engine_surface does NOT read it a second time (which
         // would always see false because the flag is reset on read).
+        // rendered 标记只读取一次，然后传给 pollFrame()，
+        // 避免 engine_surface 再读第二次时总是拿到 false。
         final bool rendered = await _bridge.engineGetFrameRenderedFlag();
         if (rendered) {
           if (_rendererInfo.isEmpty) {
             _fetchRendererInfo();
           }
           // Compute the real inter-render interval for accurate FPS.
+          // 用真实渲染间隔来计算 FPS，避免把未渲染的 vsync 也算进去。
           final int renderDeltaMs = _lastRenderedElapsed == Duration.zero
               ? deltaMs
               : (elapsed - _lastRenderedElapsed).inMilliseconds.clamp(1, 200);
@@ -527,9 +562,16 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
           );
           // Poll frame immediately after tick, passing the flag so
           // engine_surface skips its own flag read.
+          // tick 后立即拉取画面，并把 rendered 标记传下去，
+          // 让 engine_surface 跳过自己的重复读取。
           await _surfaceKey.currentState?.pollFrame(rendered: true);
         }
         _tickCount += 1;
+        if (_showDebug && mounted && _tickCount % 30 == 0) {
+          // The debug panel does not need per-frame refreshes.
+          // 调试面板不需要逐帧刷新，定期更新即可兼顾可读性和开销。
+          setState(() {});
+        }
 
         if (_tickCount % 300 == 0) {
           _log('Tick alive: count=$_tickCount');
@@ -646,6 +688,8 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
   Future<void> _drainStartupLogs() async {
     // Drain in a short burst so high-volume native logs are shown in time
     // during startup and don't overflow the native startup queue.
+    // 以短突发方式快速拉取日志，避免启动阶段 native 日志积压，
+    // 同时减少原生日志队列被刷爆的风险。
     for (var i = 0; i < 8; i++) {
       final raw = await _bridge.engineDrainStartupLogs();
       if (raw.isEmpty) {
@@ -661,14 +705,18 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
     }
   }
 
-  // --- Lifecycle ---
+  // --- Lifecycle / 生命周期处理 ---
 
   Future<void> _pauseForLifecycle() async {
     // If a resume comes while we are still pausing, record it so we
     // can bounce back after the pause finishes.
+    // 如果 pause 尚未完成时又收到了 resume，请先记下来，
+    // 等 pause 结束后再自动恢复。
     if (_lifecycleTransitionInFlight) {
       // Another transition is running — just clear the pending-resume
       // flag; we want to stay paused.
+      // 如果当前还有其他生命周期切换在执行，就先清除 pending-resume，
+      // 保持暂停态优先。
       _pendingLifecycleResumed = false;
       return;
     }
@@ -693,6 +741,8 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
 
     // If a resume was requested while the pause was in-flight, honour
     // it now so the engine doesn't stay frozen.
+    // 如果 pause 过程中已经收到过 resume，请在这里补做，
+    // 避免引擎停在冻结状态。
     if (_pendingLifecycleResumed && mounted) {
       _pendingLifecycleResumed = false;
       await _resumeForLifecycle();
@@ -702,6 +752,7 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
   Future<void> _resumeForLifecycle() async {
     // If a pause is still in-flight, record that we want to resume
     // once it completes.
+    // 如果 pause 仍在进行中，就先记录一个“完成后恢复”的意图。
     if (_lifecycleTransitionInFlight) {
       _pendingLifecycleResumed = true;
       return;
@@ -726,7 +777,7 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
     }
   }
 
-  // --- Settings ---
+  // --- Settings / 设置同步 ---
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
@@ -758,8 +809,10 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
   }
 
   /// Apply the current fps_limit setting to the C++ engine layer.
+  /// 把当前 fps_limit 设置同步到 C++ 引擎层。
   /// When disabled (fpsLimitEnabled=false), sends fps_limit=0 so the
   /// engine renders every vsync. When enabled, sends the target FPS value.
+  /// 关闭时发送 fps_limit=0，让引擎跟随每次 vsync；开启时发送目标 FPS。
   Future<void> _applyFpsLimit() async {
     final int fpsValue = _fpsLimitEnabled ? _targetFps : 0;
     _log(
@@ -773,7 +826,8 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
 
   Future<void> _applyMemoryGovernorOptions() async {
     const profile = PrefsKeys.memoryProfileAggressive;
-    const budgetMb = 0; // 0 = native auto budget by system memory
+    const budgetMb =
+        0; // 0 = native auto budget by system memory / 0 表示由原生层按系统内存自动预算
     const logIntervalMs = 12000;
     const psbCacheMb = 128;
     const psbCacheEntries = 1024;
@@ -816,11 +870,12 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
       _rendererInfo = _bridge.engineGetRendererInfo();
       if (mounted) setState(() {});
     } catch (_) {
-      // Renderer info is best-effort
+      // Renderer info is best-effort.
+      // 渲染器信息仅用于调试展示，失败时不影响主流程。
     }
   }
 
-  // --- Logging ---
+  // --- Logging / 日志处理 ---
 
   void _log(String message) {
     final now = DateTime.now();
@@ -830,13 +885,29 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
     if (_logs.length > _maxLogs) {
       _logs.removeRange(_maxLogs, _logs.length);
     }
-    // Try to update the UI if we're in a loading phase
-    if (mounted && _phase != _EnginePhase.running) {
+    // Try to update the UI if we're in a loading phase.
+    // 处于加载态或调试面板打开时，尽量及时刷新 UI。
+    if (mounted && (_phase != _EnginePhase.running || _showDebug)) {
       setState(() {});
     }
   }
 
-  // --- UI ---
+  String _buildDebugRuntimeSummary() {
+    final EngineSurfaceState? surfaceState = _surfaceKey.currentState;
+    final String backend = _backendDescription.isEmpty
+        ? 'pending'
+        : _backendDescription;
+    final String renderer = _rendererInfo.isEmpty ? 'pending' : _rendererInfo;
+    final String fpsLimit = _fpsLimitEnabled ? '$_targetFps' : 'off';
+    final String surfacePath = surfaceState?.debugPresentPath ?? 'pending';
+    final String surfaceSize =
+        surfaceState?.debugSizeSummary ?? 'surface=pending frame=pending';
+    return 'Backend: $backend  |  Renderer: $renderer  |  '
+        'Surface: $surfacePath  |  $surfaceSize  |  '
+        'FPS limit: $fpsLimit';
+  }
+
+  // --- UI / 界面构建 ---
 
   void _toggleOverlay() {
     setState(() => _showOverlay = !_showOverlay);
@@ -861,7 +932,7 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Full-screen engine surface
+          // Full-screen engine surface / 全屏引擎画面
           Positioned.fill(
             child: _phase == _EnginePhase.error
                 ? _buildErrorView()
@@ -878,14 +949,14 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
                 : _buildBootLogView(),
           ),
 
-          // Performance overlay (top-left)
+          // Performance overlay (top-left) / 左上角性能叠层
           if (_showPerfOverlay && _phase == _EnginePhase.running)
             EnginePerformanceOverlay(
               key: _perfOverlayKey0,
               rendererInfo: _rendererInfo,
             ),
 
-          // Floating menu button (top-right)
+          // Floating menu button (top-right) / 右上角浮动菜单按钮
           Positioned(
             right: 16,
             top: MediaQuery.of(context).padding.top + 8,
@@ -911,10 +982,10 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
             ),
           ),
 
-          // Overlay controls
+          // Overlay controls / 浮层控制项
           if (_showOverlay) _buildOverlay(),
 
-          // Debug panel
+          // Debug panel / 调试面板
           if (_showDebug) _buildDebugPanel(),
         ],
       ),
@@ -924,6 +995,7 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
   Widget _buildBootLogView() {
     // Full-screen terminal-style boot log — no animations that would
     // freeze during synchronous FFI calls.
+    // 全屏终端风格启动日志；避免使用会在同步 FFI 阻塞时卡住的动画。
     final String phaseLabel;
     switch (_phase) {
       case _EnginePhase.initializing:
@@ -939,10 +1011,12 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
         phaseLabel = 'LOADING';
     }
 
-    // Reversed logs so newest is at the bottom (terminal style)
+    // Reversed logs so newest is at the bottom (terminal style).
+    // 将日志反转，保持终端式“最新内容在底部”的阅读顺序。
     final reversedLogs = _logs.reversed.toList();
 
-    // Schedule scroll-to-bottom after this frame
+    // Schedule scroll-to-bottom after this frame.
+    // 在本帧结束后自动滚动到底部。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_bootLogScrollController.hasClients) {
         _bootLogScrollController.jumpTo(
@@ -957,7 +1031,7 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Header bar
+            // Header bar / 顶部状态栏
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: const BoxDecoration(
@@ -998,7 +1072,7 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
                 ],
               ),
             ),
-            // Game path info
+            // Game path info / 游戏路径信息
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               color: Colors.white.withValues(alpha: 0.03),
@@ -1013,7 +1087,8 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            // Log area — scrollable terminal output
+            // Log area — scrollable terminal output.
+            // 日志区域：可滚动的终端输出。
             Expanded(
               child: reversedLogs.isEmpty
                   ? Center(
@@ -1052,7 +1127,7 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
                       },
                     ),
             ),
-            // Bottom status bar
+            // Bottom status bar / 底部状态栏
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               decoration: const BoxDecoration(
@@ -1060,7 +1135,8 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
               ),
               child: Row(
                 children: [
-                  // Static blinking cursor indicator (just a block char)
+                  // Static cursor indicator (just a block char).
+                  // 静态光标指示符（直接使用一个块字符）。
                   const Text(
                     '█',
                     style: TextStyle(
@@ -1249,6 +1325,8 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
   }
 
   Widget _buildDebugPanel() {
+    final String runtimeSummary = _buildDebugRuntimeSummary();
+
     return Positioned(
       left: 0,
       right: 0,
@@ -1262,33 +1340,50 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               color: Colors.white10,
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(
-                    'Debug  |  Phase: ${_phase.name}  |  '
-                    'Ticks: $_tickCount  |  '
-                    'Ticking: $_isTicking',
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 12,
-                      fontFamily: 'monospace',
-                    ),
+                  Row(
+                    children: [
+                      Text(
+                        'Debug  |  Phase: ${_phase.name}  |  '
+                        'Ticks: $_tickCount  |  '
+                        'Ticking: $_isTicking',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                      const Spacer(),
+                      GestureDetector(
+                        onTap: () => setState(() => _logs.clear()),
+                        child: const Text(
+                          'Clear',
+                          style: TextStyle(color: Colors.white54, fontSize: 12),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      GestureDetector(
+                        onTap: _toggleDebug,
+                        child: const Icon(
+                          Icons.close,
+                          color: Colors.white54,
+                          size: 16,
+                        ),
+                      ),
+                    ],
                   ),
-                  const Spacer(),
-                  GestureDetector(
-                    onTap: () => setState(() => _logs.clear()),
-                    child: const Text(
-                      'Clear',
-                      style: TextStyle(color: Colors.white54, fontSize: 12),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  GestureDetector(
-                    onTap: _toggleDebug,
-                    child: const Icon(
-                      Icons.close,
-                      color: Colors.white54,
-                      size: 16,
+                  const SizedBox(height: 4),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Text(
+                      runtimeSummary,
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 11,
+                        fontFamily: 'monospace',
+                      ),
                     ),
                   ),
                 ],

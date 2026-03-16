@@ -47,8 +47,8 @@
 | engine_api 桥接层 | ✅ 完成 | 导出 `engine_create` / `engine_tick` / `engine_destroy` 等 C API |
 | Flutter Plugin | ✅ 基本完成 | Platform Channel 通信、Texture 纹理桥接 |
 | Texture 零拷贝渲染 | ✅ 基本完成 | 通过平台原生纹理共享机制零拷贝传递引擎渲染帧到 Flutter |
-| Flutter 调试 UI | ✅ 基本完成 | FPS 控制、引擎生命周期管理、渲染状态监控 |
-| 输入事件转发 | ✅ 基本完成 | 鼠标 / 触控事件坐标映射转发到引擎 |
+| Flutter 调试 UI | ✅ 基本完成 | FPS 控制、引擎生命周期管理、启动日志视图、渲染状态监控、后端/Surface 调试摘要 |
+| 输入事件转发 | ✅ 基本完成 | 鼠标 / 触控坐标映射、键盘修饰键转发、BMP 文本输入转发 |
 | 引擎性能优化 | 🔨 进行中 | SIMD 像素混合、GPU 合成管线、VM 解释器优化等 |
 | 游戏兼容性优化 | 🔨 进行中 | 补全解析引擎、添加插件，阶段目标与 Z 大闭源版兼容性持平 |
 | 原有 krkr2 模拟器功能移植 | 📋 规划中 | 将原有 krkr2 模拟器功能逐步移植到新架构 |
@@ -70,6 +70,15 @@
 | P0 | 像素混合 SIMD 化 ([Highway](https://github.com/google/highway)) | ✅ 完成 |
 | P0 | 全 GPU 合成渲染管线 | 🔨 进行中 |
 | P0 | TJS2 VM 解释器优化 (computed goto) | 📋 计划中 |
+
+## 近期小更新 / Recent Updates
+
+- 完成了一批围绕 Flutter 宿主路径的低风险打磨工作。
+- 补全了键盘修饰键与 BMP 文本输入到 `engine_api` 的转发。
+- 扩展了游戏内调试面板，增加 backend description、renderer info、present path 以及 surface/frame size summary。
+- 这些改动都刻意保持在非核心渲染主链路之外，便于在后续 GPU / Vulkan 大项推进前稳定落地。
+
 ## 许可证
 
 本项目基于 GNU General Public License v3.0 (GPL-3.0) 开源，详见 [LICENSE](./LICENSE)。
+

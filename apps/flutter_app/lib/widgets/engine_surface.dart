@@ -21,14 +21,18 @@ class EngineInputEventType {
 }
 
 /// Rendering mode for the engine surface.
+/// 引擎画面的呈现模式。
 enum EngineSurfaceMode {
   /// GPU zero-copy mode (macOS: IOSurface, Android: SurfaceTexture).
+  /// GPU 零拷贝模式（macOS 使用 IOSurface，Android 使用 SurfaceTexture）。
   gpuZeroCopy,
 
   /// Flutter Texture with RGBA pixel upload (cross-platform, slower).
+  /// 通过 Flutter Texture 上传 RGBA 像素（跨平台，但更慢）。
   texture,
 
   /// Pure software decoding via RawImage (slowest, always works).
+  /// 通过 RawImage 纯软件显示（最慢，但兼容性最好）。
   software,
 }
 
@@ -48,8 +52,11 @@ class EngineSurface extends StatefulWidget {
   final EngineSurfaceMode surfaceMode;
 
   /// When true, the internal frame polling timer is disabled.
+  /// 为 true 时禁用内部帧轮询计时器。
   /// The parent widget must call [EngineSurfaceState.pollFrame()] after each
   /// engine tick to eliminate the dual-timer phase mismatch.
+  /// 父组件需要在每次 engine tick 后主动调用
+  /// [EngineSurfaceState.pollFrame()]，以消除双计时器的相位错位。
   final bool externalTickDriven;
   final ValueChanged<String>? onLog;
   final ValueChanged<String>? onError;
@@ -59,6 +66,16 @@ class EngineSurface extends StatefulWidget {
 }
 
 class EngineSurfaceState extends State<EngineSurface> {
+  // Keep the same bit layout as C++ TVP_SS_* so modifiers can be forwarded
+  // directly into engine_api.
+  // 与 C++ 侧 TVP_SS_* 保持同一位图布局，便于直接透传到 engine_api。
+  static const int _modifierShift = 1 << 0;
+  static const int _modifierAlt = 1 << 1;
+  static const int _modifierCtrl = 1 << 2;
+  static const int _modifierLeft = 1 << 3;
+  static const int _modifierRight = 1 << 4;
+  static const int _modifierMiddle = 1 << 5;
+
   final FocusNode _focusNode = FocusNode(debugLabel: 'engine-surface-focus');
   bool _vsyncScheduled = false;
   bool _frameInFlight = false;
@@ -71,22 +88,53 @@ class EngineSurfaceState extends State<EngineSurface> {
   int _frameHeight = 0;
   double _devicePixelRatio = 1.0;
 
-  // Legacy texture mode
+  // Legacy texture mode / 旧版纹理路径
   int? _textureId;
 
-  // IOSurface zero-copy mode (macOS)
+  // IOSurface zero-copy mode (macOS) / macOS 的 IOSurface 零拷贝路径
   int? _ioSurfaceTextureId;
   // ignore: unused_field
   int? _ioSurfaceId;
   bool _ioSurfaceInitInFlight = false;
 
-  // SurfaceTexture zero-copy mode (Android)
+  // SurfaceTexture zero-copy mode (Android) / Android 的 SurfaceTexture 零拷贝路径
   int? _surfaceTextureId;
   bool _surfaceTextureInitInFlight = false;
   Size _lastRequestedLogicalSize = Size.zero;
   double _lastRequestedDpr = 1.0;
   EngineInputEventData? _pendingPointerMoveEvent;
   bool _pointerMoveFlushScheduled = false;
+
+  /// Current present path for the debug panel.
+  /// 当前实际使用的呈现路径，供调试面板展示。
+  String get debugPresentPath {
+    if (_ioSurfaceTextureId != null) {
+      return 'zero-copy:IOSurface';
+    }
+    if (_surfaceTextureId != null) {
+      return 'zero-copy:SurfaceTexture';
+    }
+    if (_textureId != null) {
+      return 'texture-upload';
+    }
+    if (_frameImage != null) {
+      return 'software-image';
+    }
+    return 'pending';
+  }
+
+  /// Surface/frame size summary for debug display.
+  /// 当前 surface 与 frame 的尺寸摘要，便于观察缩放链路是否正确。
+  String get debugSizeSummary {
+    final String surface = _surfaceWidth > 0 && _surfaceHeight > 0
+        ? '${_surfaceWidth}x$_surfaceHeight'
+        : 'pending';
+    final String frame = _frameWidth > 0 && _frameHeight > 0
+        ? '${_frameWidth}x$_frameHeight'
+        : 'pending';
+    return 'surface=$surface frame=$frame '
+        'dpr=${_devicePixelRatio.toStringAsFixed(2)}';
+  }
 
   @override
   void initState() {
@@ -114,6 +162,7 @@ class EngineSurfaceState extends State<EngineSurface> {
   @override
   void dispose() {
     // _vsyncScheduled will simply be ignored once disposed.
+    // 组件销毁后，即使还有计划中的 vsync 回调，也会被安全忽略。
     _vsyncScheduled = false;
     _frameImage?.dispose();
     unawaited(_disposeAllTextures());
@@ -138,7 +187,9 @@ class EngineSurfaceState extends State<EngineSurface> {
   }
 
   /// Schedule a single vsync-aligned frame callback.
+  /// 安排一次与 vsync 对齐的帧回调。
   /// This replaces Timer.periodic and aligns with Flutter's display refresh.
+  /// 这会替代 Timer.periodic，并与 Flutter 的屏幕刷新节奏保持同步。
   void _scheduleVsyncPoll() {
     if (_vsyncScheduled || !widget.active || widget.externalTickDriven) {
       return;
@@ -155,13 +206,18 @@ class EngineSurfaceState extends State<EngineSurface> {
   }
 
   /// Public entry point for the parent tick loop to drive frame polling.
+  /// 对父级 tick 循环公开的帧轮询入口。
   /// Call this immediately after [EngineBridge.engineTick] completes
   /// to eliminate the dual-timer phase mismatch.
+  /// 在 [EngineBridge.engineTick] 完成后立即调用，以消除双计时器相位偏差。
   ///
   /// When [rendered] is provided (non-null), the IOSurface path uses it
   /// directly instead of calling [engineGetFrameRenderedFlag] again.
+  /// 当 [rendered] 非空时，IOSurface 路径会直接使用这个值，
+  /// 而不是再次调用 [engineGetFrameRenderedFlag]。
   /// This avoids the double-read problem where the flag is reset on the
   /// first read and the second read always sees false.
+  /// 这样可以避免标志位第一次读取后被清零，第二次读取永远为 false 的问题。
   Future<void> pollFrame({bool? rendered}) =>
       _pollFrame(externalRendered: rendered);
 
@@ -212,12 +268,13 @@ class EngineSurfaceState extends State<EngineSurface> {
         await _ensureTexture();
         break;
       case EngineSurfaceMode.software:
-        // No texture needed
+        // No texture needed.
+        // 纯软件路径下不需要额外纹理。
         break;
     }
   }
 
-  // --- IOSurface zero-copy mode ---
+  // --- IOSurface zero-copy mode / IOSurface 零拷贝模式 ---
 
   Future<void> _ensureIOSurfaceTexture() async {
     if (!widget.active ||
@@ -227,12 +284,13 @@ class EngineSurfaceState extends State<EngineSurface> {
       return;
     }
 
-    // Check if we need to resize
+    // Check if we need to resize.
+    // 检查是否需要 resize。
     if (_ioSurfaceTextureId != null) {
       if (_frameWidth == _surfaceWidth && _frameHeight == _surfaceHeight) {
         return; // Already at correct size
       }
-      // Resize needed
+      // Resize needed / 需要调整尺寸
       _ioSurfaceInitInFlight = true;
       try {
         final result = await widget.bridge.resizeIOSurfaceTexture(
@@ -242,7 +300,8 @@ class EngineSurfaceState extends State<EngineSurface> {
         );
         if (result != null && mounted) {
           final int newIOSurfaceId = result['ioSurfaceID'] as int;
-          // Tell the engine about the new IOSurface
+          // Tell the engine about the new IOSurface.
+          // 把新的 IOSurface 信息同步给引擎侧。
           final int setResult = await widget.bridge
               .engineSetRenderTargetIOSurface(
                 iosurfaceId: newIOSurfaceId,
@@ -280,7 +339,8 @@ class EngineSurfaceState extends State<EngineSurface> {
         widget.onLog?.call(
           'IOSurface texture unavailable, falling back to legacy texture mode',
         );
-        // Fall back to legacy texture mode
+        // Fall back to legacy texture mode.
+        // 回退到旧版纹理上传路径。
         await _ensureTexture();
         return;
       }
@@ -288,7 +348,8 @@ class EngineSurfaceState extends State<EngineSurface> {
       final int textureId = result['textureId'] as int;
       final int ioSurfaceId = result['ioSurfaceID'] as int;
 
-      // Tell the C++ engine to render to this IOSurface
+      // Tell the C++ engine to render to this IOSurface.
+      // 通知 C++ 引擎把这个 IOSurface 作为渲染目标。
       final int setResult = await widget.bridge.engineSetRenderTargetIOSurface(
         iosurfaceId: ioSurfaceId,
         width: _surfaceWidth,
@@ -300,7 +361,8 @@ class EngineSurfaceState extends State<EngineSurface> {
           'engine_set_render_target_iosurface failed: $setResult, '
           'error=${widget.bridge.engineGetLastError()}',
         );
-        // Clean up and fall back
+        // Clean up and fall back.
+        // 清理失败资源，然后回退到旧路径。
         await widget.bridge.disposeIOSurfaceTexture(textureId: textureId);
         await _ensureTexture();
         return;
@@ -329,7 +391,8 @@ class EngineSurfaceState extends State<EngineSurface> {
     if (textureId == null) return;
     _ioSurfaceTextureId = null;
     _ioSurfaceId = null;
-    // Detach from engine
+    // Detach from engine.
+    // 先从引擎侧解除绑定，再释放纹理。
     try {
       await widget.bridge.engineSetRenderTargetIOSurface(
         iosurfaceId: 0,
@@ -340,7 +403,7 @@ class EngineSurfaceState extends State<EngineSurface> {
     await widget.bridge.disposeIOSurfaceTexture(textureId: textureId);
   }
 
-  // --- SurfaceTexture zero-copy mode (Android) ---
+  // --- SurfaceTexture zero-copy mode (Android) / Android SurfaceTexture 零拷贝模式 ---
 
   Future<void> _ensureSurfaceTexture() async {
     if (!widget.active ||
@@ -350,12 +413,13 @@ class EngineSurfaceState extends State<EngineSurface> {
       return;
     }
 
-    // Check if we need to resize
+    // Check if we need to resize.
+    // 检查是否需要 resize。
     if (_surfaceTextureId != null) {
       if (_frameWidth == _surfaceWidth && _frameHeight == _surfaceHeight) {
         return; // Already at correct size
       }
-      // Resize needed
+      // Resize needed / 需要调整尺寸
       _surfaceTextureInitInFlight = true;
       try {
         final result = await widget.bridge.resizeSurfaceTexture(
@@ -396,8 +460,12 @@ class EngineSurfaceState extends State<EngineSurface> {
 
       // The SurfaceTexture/Surface is already passed to C++ via JNI
       // in the Kotlin plugin's createSurfaceTexture method.
+      // SurfaceTexture / Surface 已经在 Kotlin 插件的 createSurfaceTexture
+      // 流程中通过 JNI 传给 C++。
       // The C++ engine_tick() will auto-detect the pending ANativeWindow
       // and attach it as the EGL WindowSurface render target.
+      // C++ 的 engine_tick() 会自动探测待绑定的 ANativeWindow，
+      // 并把它接成 EGL WindowSurface 渲染目标。
 
       final ui.Image? previousImage = _frameImage;
       setState(() {
@@ -423,7 +491,7 @@ class EngineSurfaceState extends State<EngineSurface> {
     await widget.bridge.disposeSurfaceTexture(textureId: textureId);
   }
 
-  // --- Legacy texture mode ---
+  // --- Legacy texture mode / 旧版纹理模式 ---
 
   Future<void> _ensureTexture() async {
     if (!widget.active || _textureInitInFlight || _textureId != null) {
@@ -469,8 +537,7 @@ class EngineSurfaceState extends State<EngineSurface> {
     await widget.bridge.disposeTexture(textureId: textureId);
   }
 
-  // --- Frame polling ---
-
+  // --- Frame polling / 帧轮询 ---
   Future<void> _pollFrame({bool? externalRendered}) async {
     if (!widget.active || _frameInFlight) {
       return;
@@ -478,12 +545,16 @@ class EngineSurfaceState extends State<EngineSurface> {
 
     _frameInFlight = true;
     try {
-      // IOSurface/SurfaceTexture zero-copy mode: just notify Flutter, no pixel transfer
+      // IOSurface / SurfaceTexture zero-copy mode: just notify Flutter.
+      // IOSurface / SurfaceTexture 零拷贝模式下只需通知 Flutter，无需传输像素。
       if (_ioSurfaceTextureId != null || _surfaceTextureId != null) {
         // When the caller already checked the flag (external tick-driven
         // mode), use that value directly to avoid the double-read problem.
+        // 如果外部 tick 循环已经检查过 rendered 标记，就直接复用该值，
+        // 避免重复读取。
         // engineGetFrameRenderedFlag resets the flag on read, so a second
         // read would always return false.
+        // 因为 engineGetFrameRenderedFlag 会在读取时清零，第二次读取一定为 false。
         final bool rendered =
             externalRendered ??
             await widget.bridge.engineGetFrameRenderedFlag();
@@ -497,7 +568,8 @@ class EngineSurfaceState extends State<EngineSurface> {
         return;
       }
 
-      // Legacy path: read pixels
+      // Legacy path: read pixels.
+      // 旧路径会主动读回像素。
       final EngineFrameData? frameData = await widget.bridge.engineReadFrame();
       if (frameData == null) {
         return;
@@ -593,9 +665,12 @@ class EngineSurfaceState extends State<EngineSurface> {
   }
 
   Widget _buildTextureView(int textureId) {
-    // Use physical pixel dimensions, but convert to logical pixels for layout.
+    // Use physical pixel dimensions, but convert them to logical pixels
+    // for layout calculations.
+    // 使用物理像素尺寸，但为了布局与宽高比计算会换算成逻辑像素。
     // The Texture widget renders at full physical resolution regardless of
     // the SizedBox logical size, so this only affects aspect ratio calculation.
+    // Texture 组件始终按物理分辨率绘制，因此这里只影响宽高比计算。
     final double dpr = _devicePixelRatio > 0 ? _devicePixelRatio : 1.0;
     final int physW = _frameWidth > 0
         ? _frameWidth
@@ -616,12 +691,77 @@ class EngineSurfaceState extends State<EngineSurface> {
   }
 
   /// Convert Flutter's button bitmask to engine button index.
+  /// 把 Flutter 的鼠标按键位图转换成引擎侧按钮编号。
   /// Flutter: kPrimaryButton=1, kSecondaryButton=2, kMiddleMouseButton=4
+  /// Flutter：kPrimaryButton=1，kSecondaryButton=2，kMiddleMouseButton=4
   /// Engine:  0=left, 1=right, 2=middle
+  /// 引擎：0=左键，1=右键，2=中键
   static int _flutterButtonsToEngineButton(int buttons) {
     if (buttons & kSecondaryButton != 0) return 1; // right
     if (buttons & kMiddleMouseButton != 0) return 2; // middle
     return 0; // left (default)
+  }
+
+  /// Build a TVP_SS_* compatible modifier bitmask from Flutter input state.
+  /// 汇总 Flutter 当前键盘/鼠标状态，生成与 TVP_SS_* 对齐的修饰键位图。
+  int _buildModifierMask({int buttons = 0}) {
+    final keyboard = HardwareKeyboard.instance;
+    int modifiers = 0;
+
+    if (keyboard.isShiftPressed) {
+      modifiers |= _modifierShift;
+    }
+    if (keyboard.isAltPressed) {
+      modifiers |= _modifierAlt;
+    }
+    if (keyboard.isControlPressed) {
+      modifiers |= _modifierCtrl;
+    }
+    if ((buttons & kPrimaryButton) != 0) {
+      modifiers |= _modifierLeft;
+    }
+    if ((buttons & kSecondaryButton) != 0) {
+      modifiers |= _modifierRight;
+    }
+    if ((buttons & kMiddleMouseButton) != 0) {
+      modifiers |= _modifierMiddle;
+    }
+
+    return modifiers;
+  }
+
+  /// Compress Flutter text input into a single Unicode code point.
+  /// 将 Flutter 的字符输入压缩成单个 Unicode code point。
+  ///
+  /// Only a single BMP scalar is accepted here to avoid forwarding
+  /// combined characters, emoji, or control characters into the current
+  /// 16-bit oriented TJS/TVP text-input path.
+  /// 这里故意只接收单个 BMP 字符，避免把组合字符、emoji 或控制字符
+  /// 误发给目前仍以 16-bit 字符为主的 TJS/TVP 输入链路。
+  int? _tryGetTextInputCodepoint(KeyEvent event, int modifiers) {
+    if ((modifiers & (_modifierAlt | _modifierCtrl)) != 0) {
+      return null;
+    }
+
+    final String? character = event.character;
+    if (character == null || character.isEmpty) {
+      return null;
+    }
+
+    final List<int> runes = character.runes.toList(growable: false);
+    if (runes.length != 1) {
+      return null;
+    }
+
+    final int codepoint = runes.first;
+    final bool isControl =
+        (codepoint >= 0x00 && codepoint <= 0x1F) ||
+        (codepoint >= 0x7F && codepoint <= 0x9F);
+    if (isControl || codepoint > 0xFFFF) {
+      return null;
+    }
+
+    return codepoint;
   }
 
   EngineInputEventData _buildPointerEventData({
@@ -630,15 +770,20 @@ class EngineSurfaceState extends State<EngineSurface> {
     double? deltaX,
     double? deltaY,
   }) {
-    // Map pointer position from Listener's logical coordinate space
-    // to the engine surface's physical pixel coordinates.
+    // Map pointer position from Listener logical coordinates
+    // to engine-surface physical-pixel coordinates.
+    // 将 Listener 的逻辑坐标映射到引擎 surface 的物理像素坐标。
     //
     // Listener's localPosition is in logical pixels. The engine's
     // EGL surface is sized in physical pixels (logical * dpr), so
     // multiply by dpr to get surface coordinates.
+    // Listener.localPosition 使用逻辑像素，而引擎 EGL surface 使用
+    // 物理像素（logical * dpr），因此这里需要乘以 dpr。
     //
     // The C++ side (DrawDevice::TransformToPrimaryLayerManager)
-    // then maps these surface coordinates → primary layer coordinates.
+    // then maps these surface coordinates to primary-layer coordinates.
+    // C++ 侧随后会通过 DrawDevice::TransformToPrimaryLayerManager
+    // 再把 surface 坐标转换成主 Layer 坐标。
     final double dpr = _devicePixelRatio > 0 ? _devicePixelRatio : 1.0;
     return EngineInputEventData(
       type: type,
@@ -649,6 +794,7 @@ class EngineSurfaceState extends State<EngineSurface> {
       deltaY: (deltaY ?? event.delta.dy) * dpr,
       pointerId: event.pointer,
       button: _flutterButtonsToEngineButton(event.buttons),
+      modifiers: _buildModifierMask(buttons: event.buttons),
     );
   }
 
@@ -738,15 +884,33 @@ class EngineSurfaceState extends State<EngineSurface> {
         ? EngineInputEventType.keyDown
         : EngineInputEventType.keyUp;
     final int keyCode = event.logicalKey.keyId & 0xFFFFFFFF;
+    final int modifiers = _buildModifierMask();
     unawaited(
       _sendInputEvent(
         EngineInputEventData(
           type: type,
           timestampMicros: event.timeStamp.inMicroseconds,
           keyCode: keyCode,
+          modifiers: modifiers,
         ),
       ),
     );
+
+    if (isDown) {
+      final int? textCodepoint = _tryGetTextInputCodepoint(event, modifiers);
+      if (textCodepoint != null) {
+        unawaited(
+          _sendInputEvent(
+            EngineInputEventData(
+              type: EngineInputEventType.textInput,
+              timestampMicros: event.timeStamp.inMicroseconds,
+              unicodeCodepoint: textCodepoint,
+              modifiers: modifiers,
+            ),
+          ),
+        );
+      }
+    }
 
     if (isDown &&
         (event.logicalKey == LogicalKeyboardKey.escape ||
@@ -757,6 +921,7 @@ class EngineSurfaceState extends State<EngineSurface> {
             type: EngineInputEventType.back,
             timestampMicros: event.timeStamp.inMicroseconds,
             keyCode: keyCode,
+            modifiers: modifiers,
           ),
         ),
       );
