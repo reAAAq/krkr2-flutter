@@ -46,10 +46,15 @@
 
 #ifdef TJS_VM_THREADED_CODE
 #define TJS_VM_CASE(op) L_##op:
+// Bounds-checked dispatch: treat opcode as unsigned and clamp out-of-range
+// values to the __VM_LAST slot (which holds &&L_VM_DEFAULT → ThrowInvalidVMCode).
+// 越界保护分派：将操作码转为无符号整型，超出范围的值映射到 __VM_LAST 槽
+// （即 &&L_VM_DEFAULT，最终调用 ThrowInvalidVMCode）。
 #define TJS_VM_NEXT()                                                          \
     do {                                                                       \
         codesave = code;                                                       \
-        goto *dispatch_table[*code];                                           \
+        tjs_uint32 _op = (tjs_uint32)(tjs_int32)*code;                         \
+        goto *dispatch_table[_op < (tjs_uint32)__VM_LAST ? _op : __VM_LAST];  \
     } while(0)
 #define TJS_VM_DEFAULT() L_VM_DEFAULT:
 #else
@@ -974,7 +979,7 @@ namespace TJS {
                 &&L_VM_NUM,       &&L_VM_CHS,       &&L_VM_INV,
                 &&L_VM_CHKINV,    &&L_VM_INT,       &&L_VM_REAL,
                 &&L_VM_STR,       &&L_VM_OCTET,     &&L_VM_CALL,
-                &&L_VM_CALLD,     &&L_VM_CALLI,     &&L_VM_CALL,
+                &&L_VM_CALLD,     &&L_VM_CALLI,     &&L_VM_NEW,
                 &&L_VM_GPD,       &&L_VM_SPD,       &&L_VM_SPDE,
                 &&L_VM_SPDEH,     &&L_VM_GPI,       &&L_VM_SPI,
                 &&L_VM_SPIE,      &&L_VM_GPDS,      &&L_VM_SPDS,
@@ -991,7 +996,11 @@ namespace TJS {
                     __VM_LAST + 1,
                 "dispatch table size must match tTJSVMCodes enum");
             codesave = code;
-            goto *dispatch_table[*code];
+            {
+                // Initial bounds-checked dispatch / 初始越界保护分派
+                tjs_uint32 _op = (tjs_uint32)(tjs_int32)*code;
+                goto *dispatch_table[_op < (tjs_uint32)__VM_LAST ? _op : __VM_LAST];
+            }
 #else
             while(true) {
                 codesave = code;
