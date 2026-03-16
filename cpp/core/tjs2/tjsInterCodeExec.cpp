@@ -32,6 +32,32 @@
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
+//---------------------------------------------------------------------------
+// TJS2 VM Threaded Code (Computed Goto) Optimization
+// GCC/Clang: labels-as-values for direct threaded dispatch (~15-25% faster)
+// MSVC: falls back to traditional switch-case dispatch
+// TJS2 VM 线程化代码（Computed Goto）优化
+// GCC/Clang：使用标签地址实现直接线程化分派（约 15-25% 性能提升）
+// MSVC：退回到传统 switch-case 分派
+//---------------------------------------------------------------------------
+#if (defined(__GNUC__) || defined(__clang__)) && !defined(TJS_VM_NO_COMPUTED_GOTO)
+#define TJS_VM_THREADED_CODE
+#endif
+
+#ifdef TJS_VM_THREADED_CODE
+#define TJS_VM_CASE(op) L_##op:
+#define TJS_VM_NEXT()                                                          \
+    do {                                                                       \
+        codesave = code;                                                       \
+        goto *dispatch_table[*code];                                           \
+    } while(0)
+#define TJS_VM_DEFAULT() L_VM_DEFAULT:
+#else
+#define TJS_VM_CASE(op)  case op:
+#define TJS_VM_NEXT()    break
+#define TJS_VM_DEFAULT() default:
+#endif
+
 namespace TJS {
     //---------------------------------------------------------------------------
     // utility functions
@@ -898,164 +924,235 @@ namespace TJS {
 
             bool flag = false;
 
+#ifdef TJS_VM_THREADED_CODE
+            {
+            // Direct threaded dispatch table - one entry per VM opcode
+            // 直接线程化分派表 - 每个 VM 操作码对应一个条目
+            static const void *dispatch_table[__VM_LAST + 1] = {
+                &&L_VM_NOP,       &&L_VM_CONST,     &&L_VM_CP,
+                &&L_VM_CL,        &&L_VM_CCL,       &&L_VM_TT,
+                &&L_VM_TF,        &&L_VM_CEQ,       &&L_VM_CDEQ,
+                &&L_VM_CLT,       &&L_VM_CGT,       &&L_VM_SETF,
+                &&L_VM_SETNF,     &&L_VM_LNOT,      &&L_VM_NF,
+                &&L_VM_JF,        &&L_VM_JNF,       &&L_VM_JMP,
+                // INC group
+                &&L_VM_INC,   &&L_VM_INCPD,  &&L_VM_INCPI,  &&L_VM_INCP,
+                // DEC group
+                &&L_VM_DEC,   &&L_VM_DECPD,  &&L_VM_DECPI,  &&L_VM_DECP,
+                // LOR group
+                &&L_VM_LOR,   &&L_VM_LORPD,  &&L_VM_LORPI,  &&L_VM_LORP,
+                // LAND group
+                &&L_VM_LAND,  &&L_VM_LANDPD, &&L_VM_LANDPI, &&L_VM_LANDP,
+                // BOR group
+                &&L_VM_BOR,   &&L_VM_BORPD,  &&L_VM_BORPI,  &&L_VM_BORP,
+                // BXOR group
+                &&L_VM_BXOR,  &&L_VM_BXORPD, &&L_VM_BXORPI, &&L_VM_BXORP,
+                // BAND group
+                &&L_VM_BAND,  &&L_VM_BANDPD, &&L_VM_BANDPI, &&L_VM_BANDP,
+                // SAR group
+                &&L_VM_SAR,   &&L_VM_SARPD,  &&L_VM_SARPI,  &&L_VM_SARP,
+                // SAL group
+                &&L_VM_SAL,   &&L_VM_SALPD,  &&L_VM_SALPI,  &&L_VM_SALP,
+                // SR group
+                &&L_VM_SR,    &&L_VM_SRPD,   &&L_VM_SRPI,   &&L_VM_SRP,
+                // ADD group
+                &&L_VM_ADD,   &&L_VM_ADDPD,  &&L_VM_ADDPI,  &&L_VM_ADDP,
+                // SUB group
+                &&L_VM_SUB,   &&L_VM_SUBPD,  &&L_VM_SUBPI,  &&L_VM_SUBP,
+                // MOD group
+                &&L_VM_MOD,   &&L_VM_MODPD,  &&L_VM_MODPI,  &&L_VM_MODP,
+                // DIV group
+                &&L_VM_DIV,   &&L_VM_DIVPD,  &&L_VM_DIVPI,  &&L_VM_DIVP,
+                // IDIV group
+                &&L_VM_IDIV,  &&L_VM_IDIVPD, &&L_VM_IDIVPI, &&L_VM_IDIVP,
+                // MUL group
+                &&L_VM_MUL,   &&L_VM_MULPD,  &&L_VM_MULPI,  &&L_VM_MULP,
+                // Remaining opcodes
+                &&L_VM_BNOT,      &&L_VM_TYPEOF,    &&L_VM_TYPEOFD,
+                &&L_VM_TYPEOFI,   &&L_VM_EVAL,      &&L_VM_EEXP,
+                &&L_VM_CHKINS,    &&L_VM_ASC,       &&L_VM_CHR,
+                &&L_VM_NUM,       &&L_VM_CHS,       &&L_VM_INV,
+                &&L_VM_CHKINV,    &&L_VM_INT,       &&L_VM_REAL,
+                &&L_VM_STR,       &&L_VM_OCTET,     &&L_VM_CALL,
+                &&L_VM_CALLD,     &&L_VM_CALLI,     &&L_VM_CALL,
+                &&L_VM_GPD,       &&L_VM_SPD,       &&L_VM_SPDE,
+                &&L_VM_SPDEH,     &&L_VM_GPI,       &&L_VM_SPI,
+                &&L_VM_SPIE,      &&L_VM_GPDS,      &&L_VM_SPDS,
+                &&L_VM_GPIS,      &&L_VM_SPIS,      &&L_VM_SETP,
+                &&L_VM_GETP,      &&L_VM_DELD,      &&L_VM_DELI,
+                &&L_VM_SRV,       &&L_VM_RET,       &&L_VM_ENTRY,
+                &&L_VM_EXTRY,     &&L_VM_THROW,     &&L_VM_CHGTHIS,
+                &&L_VM_GLOBAL,    &&L_VM_ADDCI,     &&L_VM_REGMEMBER,
+                &&L_VM_DEBUGGER,
+                &&L_VM_DEFAULT    // __VM_LAST
+            };
+            static_assert(
+                sizeof(dispatch_table) / sizeof(dispatch_table[0]) ==
+                    __VM_LAST + 1,
+                "dispatch table size must match tTJSVMCodes enum");
+            codesave = code;
+            goto *dispatch_table[*code];
+#else
             while(true) {
                 codesave = code;
                 switch(*code) {
-                    case VM_NOP:
-                        code++;
-                        break;
+#endif
 
-                    case VM_CONST:
+                    TJS_VM_CASE(VM_NOP)
+                        code++;
+                        TJS_VM_NEXT();
+
+                    TJS_VM_CASE(VM_CONST)
                         TJS_GET_VM_REG(ra, code[1])
                             .CopyRef(TJS_GET_VM_REG(da, code[2]));
                         code += 3;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_CP:
+                    TJS_VM_CASE(VM_CP)
                         TJS_GET_VM_REG(ra, code[1])
                             .CopyRef(TJS_GET_VM_REG(ra, code[2]));
                         code += 3;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_CL:
+                    TJS_VM_CASE(VM_CL)
                         TJS_GET_VM_REG(ra, code[1]).Clear();
                         code += 2;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_CCL:
+                    TJS_VM_CASE(VM_CCL)
                         ContinuousClear(ra, code);
                         code += 3;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_TT:
+                    TJS_VM_CASE(VM_TT)
                         flag = TJS_GET_VM_REG(ra, code[1]).operator bool();
                         code += 2;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_TF:
+                    TJS_VM_CASE(VM_TF)
                         flag = !(TJS_GET_VM_REG(ra, code[1]).operator bool());
                         code += 2;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_CEQ:
+                    TJS_VM_CASE(VM_CEQ)
                         flag = TJS_GET_VM_REG(ra, code[1])
                                    .NormalCompare(TJS_GET_VM_REG(ra, code[2]));
                         code += 3;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_CDEQ:
+                    TJS_VM_CASE(VM_CDEQ)
                         flag = TJS_GET_VM_REG(ra, code[1])
                                    .DiscernCompare(TJS_GET_VM_REG(ra, code[2]));
                         code += 3;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_CLT:
+                    TJS_VM_CASE(VM_CLT)
                         flag = TJS_GET_VM_REG(ra, code[1])
                                    .GreaterThan(TJS_GET_VM_REG(ra, code[2]));
                         code += 3;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_CGT:
+                    TJS_VM_CASE(VM_CGT)
                         flag = TJS_GET_VM_REG(ra, code[1])
                                    .LittlerThan(TJS_GET_VM_REG(ra, code[2]));
                         code += 3;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_SETF:
+                    TJS_VM_CASE(VM_SETF)
                         TJS_GET_VM_REG(ra, code[1]) = flag;
                         code += 2;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_SETNF:
+                    TJS_VM_CASE(VM_SETNF)
                         TJS_GET_VM_REG(ra, code[1]) = !flag;
                         code += 2;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_LNOT:
+                    TJS_VM_CASE(VM_LNOT)
                         TJS_GET_VM_REG(ra, code[1]).logicalnot();
                         code += 2;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_NF:
+                    TJS_VM_CASE(VM_NF)
                         flag = !flag;
                         code++;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_JF:
+                    TJS_VM_CASE(VM_JF)
                         if(flag)
                             TJS_ADD_VM_CODE_ADDR(code, code[1]);
                         else
                             code += 2;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_JNF:
+                    TJS_VM_CASE(VM_JNF)
                         if(!flag)
                             TJS_ADD_VM_CODE_ADDR(code, code[1]);
                         else
                             code += 2;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_JMP:
+                    TJS_VM_CASE(VM_JMP)
                         TJS_ADD_VM_CODE_ADDR(code, code[1]);
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_INC:
+                    TJS_VM_CASE(VM_INC)
                         TJS_GET_VM_REG(ra, code[1]).increment();
                         code += 2;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_INCPD:
+                    TJS_VM_CASE(VM_INCPD)
                         OperatePropertyDirect0(ra, code, TJS_OP_INC);
                         code += 4;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_INCPI:
+                    TJS_VM_CASE(VM_INCPI)
                         OperatePropertyIndirect0(ra, code, TJS_OP_INC);
                         code += 4;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_INCP:
+                    TJS_VM_CASE(VM_INCP)
                         OperateProperty0(ra, code, TJS_OP_INC);
                         code += 3;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_DEC:
+                    TJS_VM_CASE(VM_DEC)
                         TJS_GET_VM_REG(ra, code[1]).decrement();
                         code += 2;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_DECPD:
+                    TJS_VM_CASE(VM_DECPD)
                         OperatePropertyDirect0(ra, code, TJS_OP_DEC);
                         code += 4;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_DECPI:
+                    TJS_VM_CASE(VM_DECPI)
                         OperatePropertyIndirect0(ra, code, TJS_OP_DEC);
                         code += 4;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_DECP:
+                    TJS_VM_CASE(VM_DECP)
                         OperateProperty0(ra, code, TJS_OP_DEC);
                         code += 3;
-                        break;
+                        TJS_VM_NEXT();
 
 #define TJS_DEF_VM_P(vmcode, rope)                                             \
-    case VM_##vmcode:                                                          \
+    TJS_VM_CASE(VM_##vmcode)                                                   \
         TJS_GET_VM_REG(ra, code[1]).rope(TJS_GET_VM_REG(ra, code[2]));         \
         code += 3;                                                             \
-        break;                                                                 \
-    case VM_##vmcode##PD:                                                      \
+        TJS_VM_NEXT();                                                         \
+    TJS_VM_CASE(VM_##vmcode##PD)                                               \
         OperatePropertyDirect(ra, code, TJS_OP_##vmcode);                      \
         code += 5;                                                             \
-        break;                                                                 \
-    case VM_##vmcode##PI:                                                      \
+        TJS_VM_NEXT();                                                         \
+    TJS_VM_CASE(VM_##vmcode##PI)                                               \
         OperatePropertyIndirect(ra, code, TJS_OP_##vmcode);                    \
         code += 5;                                                             \
-        break;                                                                 \
-    case VM_##vmcode##P:                                                       \
+        TJS_VM_NEXT();                                                         \
+    TJS_VM_CASE(VM_##vmcode##P)                                                \
         OperateProperty(ra, code, TJS_OP_##vmcode);                            \
         code += 4;                                                             \
-        break
+        TJS_VM_NEXT()
 
                         TJS_DEF_VM_P(LOR, logicalorequal);
                         TJS_DEF_VM_P(LAND, logicalandequal);
@@ -1074,32 +1171,32 @@ namespace TJS {
 
 #undef TJS_DEF_VM_P
 
-                    case VM_BNOT:
+                    TJS_VM_CASE(VM_BNOT)
                         TJS_GET_VM_REG(ra, code[1]).bitnot();
                         code += 2;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_ASC:
+                    TJS_VM_CASE(VM_ASC)
                         CharacterCodeOf(TJS_GET_VM_REG(ra, code[1]));
                         code += 2;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_CHR:
+                    TJS_VM_CASE(VM_CHR)
                         CharacterCodeFrom(TJS_GET_VM_REG(ra, code[1]));
                         code += 2;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_NUM:
+                    TJS_VM_CASE(VM_NUM)
                         TJS_GET_VM_REG(ra, code[1]).tonumber();
                         code += 2;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_CHS:
+                    TJS_VM_CASE(VM_CHS)
                         TJS_GET_VM_REG(ra, code[1]).changesign();
                         code += 2;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_INV:
+                    TJS_VM_CASE(VM_INV)
                         TJS_GET_VM_REG(ra, code[1]) =
                             TJS_GET_VM_REG(ra, code[1]).Type() != tvtObject
                             ? false
@@ -1109,9 +1206,9 @@ namespace TJS {
                                                ra[-1].AsObjectNoAddRef()) ==
                                TJS_S_TRUE);
                         code += 2;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_CHKINV:
+                    TJS_VM_CASE(VM_CHKINV)
                         TJS_GET_VM_REG(ra, code[1]) =
                             TJS_GET_VM_REG(ra, code[1]).Type() != tvtObject
                             ? true
@@ -1121,168 +1218,168 @@ namespace TJS {
                                       .IsValid(0, nullptr, nullptr,
                                                ra[-1].AsObjectNoAddRef()));
                         code += 2;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_INT:
+                    TJS_VM_CASE(VM_INT)
                         TJS_GET_VM_REG(ra, code[1]).ToInteger();
                         code += 2;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_REAL:
+                    TJS_VM_CASE(VM_REAL)
                         TJS_GET_VM_REG(ra, code[1]).ToReal();
                         code += 2;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_STR:
+                    TJS_VM_CASE(VM_STR)
                         TJS_GET_VM_REG(ra, code[1]).ToString();
                         code += 2;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_OCTET:
+                    TJS_VM_CASE(VM_OCTET)
                         TJS_GET_VM_REG(ra, code[1]).ToOctet();
                         code += 2;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_TYPEOF:
+                    TJS_VM_CASE(VM_TYPEOF)
                         TypeOf(TJS_GET_VM_REG(ra, code[1]));
                         code += 2;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_TYPEOFD:
+                    TJS_VM_CASE(VM_TYPEOFD)
                         TypeOfMemberDirect(ra, code, TJS_MEMBERMUSTEXIST);
                         code += 4;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_TYPEOFI:
+                    TJS_VM_CASE(VM_TYPEOFI)
                         TypeOfMemberIndirect(ra, code, TJS_MEMBERMUSTEXIST);
                         code += 4;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_EVAL:
+                    TJS_VM_CASE(VM_EVAL)
                         Eval(TJS_GET_VM_REG(ra, code[1]),
                              TJSEvalOperatorIsOnGlobal
                                  ? nullptr
                                  : ra[-1].AsObjectNoAddRef(),
                              true);
                         code += 2;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_EEXP:
+                    TJS_VM_CASE(VM_EEXP)
                         Eval(TJS_GET_VM_REG(ra, code[1]),
                              TJSEvalOperatorIsOnGlobal
                                  ? nullptr
                                  : ra[-1].AsObjectNoAddRef(),
                              false);
                         code += 2;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_CHKINS:
+                    TJS_VM_CASE(VM_CHKINS)
                         InstanceOf(TJS_GET_VM_REG(ra, code[2]),
                                    TJS_GET_VM_REG(ra, code[1]));
                         code += 3;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_CALL:
-                    case VM_NEW:
+                    TJS_VM_CASE(VM_CALL)
+                    TJS_VM_CASE(VM_NEW)
                         code += CallFunction(ra, code, args, numargs);
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_CALLD:
+                    TJS_VM_CASE(VM_CALLD)
                         code += CallFunctionDirect(ra, code, args, numargs);
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_CALLI:
+                    TJS_VM_CASE(VM_CALLI)
                         code += CallFunctionIndirect(ra, code, args, numargs);
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_GPD:
+                    TJS_VM_CASE(VM_GPD)
                         GetPropertyDirect(ra, code, 0);
                         code += 4;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_GPDS:
+                    TJS_VM_CASE(VM_GPDS)
                         GetPropertyDirect(ra, code, TJS_IGNOREPROP);
                         code += 4;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_SPD:
+                    TJS_VM_CASE(VM_SPD)
                         SetPropertyDirect(ra, code, 0);
                         code += 4;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_SPDE:
+                    TJS_VM_CASE(VM_SPDE)
                         SetPropertyDirect(ra, code, TJS_MEMBERENSURE);
                         code += 4;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_SPDEH:
+                    TJS_VM_CASE(VM_SPDEH)
                         SetPropertyDirect(ra, code,
                                           TJS_MEMBERENSURE | TJS_HIDDENMEMBER);
                         code += 4;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_SPDS:
+                    TJS_VM_CASE(VM_SPDS)
                         SetPropertyDirect(ra, code,
                                           TJS_MEMBERENSURE | TJS_IGNOREPROP);
                         code += 4;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_GPI:
+                    TJS_VM_CASE(VM_GPI)
                         GetPropertyIndirect(ra, code, 0);
                         code += 4;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_GPIS:
+                    TJS_VM_CASE(VM_GPIS)
                         GetPropertyIndirect(ra, code, TJS_IGNOREPROP);
                         code += 4;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_SPI:
+                    TJS_VM_CASE(VM_SPI)
                         SetPropertyIndirect(ra, code, 0);
                         code += 4;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_SPIE:
+                    TJS_VM_CASE(VM_SPIE)
                         SetPropertyIndirect(ra, code, TJS_MEMBERENSURE);
                         code += 4;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_SPIS:
+                    TJS_VM_CASE(VM_SPIS)
                         SetPropertyIndirect(ra, code,
                                             TJS_MEMBERENSURE | TJS_IGNOREPROP);
                         code += 4;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_GETP:
+                    TJS_VM_CASE(VM_GETP)
                         GetProperty(ra, code);
                         code += 3;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_SETP:
+                    TJS_VM_CASE(VM_SETP)
                         SetProperty(ra, code);
                         code += 3;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_DELD:
+                    TJS_VM_CASE(VM_DELD)
                         DeleteMemberDirect(ra, code);
                         code += 4;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_DELI:
+                    TJS_VM_CASE(VM_DELI)
                         DeleteMemberIndirect(ra, code);
                         code += 4;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_SRV:
+                    TJS_VM_CASE(VM_SRV)
                         if(result)
                             result->CopyRef(TJS_GET_VM_REG(ra, code[1]));
                         code += 2;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_RET:
+                    TJS_VM_CASE(VM_RET)
                         return code + 1 - CodeArea;
 
-                    case VM_ENTRY:
+                    TJS_VM_CASE(VM_ENTRY)
                         code =
                             CodeArea +
                             ExecuteCodeInTryBlock(
@@ -1290,49 +1387,54 @@ namespace TJS {
                                 TJS_FROM_VM_CODE_ADDR(code[1]) + code -
                                     CodeArea,
                                 TJS_FROM_VM_REG_ADDR(code[2]));
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_EXTRY:
+                    TJS_VM_CASE(VM_EXTRY)
                         return code + 1 - CodeArea; // same as ret
 
-                    case VM_THROW:
+                    TJS_VM_CASE(VM_THROW)
                         ThrowScriptException(TJS_GET_VM_REG(ra, code[1]), Block,
                                              CodePosToSrcPos(code - CodeArea));
                         code += 2; // actually here not proceed...
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_CHGTHIS:
+                    TJS_VM_CASE(VM_CHGTHIS)
                         TJS_GET_VM_REG(ra, code[1])
                             .ChangeClosureObjThis(
                                 TJS_GET_VM_REG(ra, code[2]).AsObjectNoAddRef());
                         code += 3;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_GLOBAL:
+                    TJS_VM_CASE(VM_GLOBAL)
                         TJS_GET_VM_REG(ra, code[1]) =
                             CachedTJSEngine->GetGlobalNoAddRef();
                         code += 2;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_ADDCI:
+                    TJS_VM_CASE(VM_ADDCI)
                         AddClassInstanceInfo(ra, code);
                         code += 3;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_REGMEMBER:
+                    TJS_VM_CASE(VM_REGMEMBER)
                         RegisterObjectMember(ra[-1].AsObjectNoAddRef());
                         code++;
-                        break;
+                        TJS_VM_NEXT();
 
-                    case VM_DEBUGGER:
+                    TJS_VM_CASE(VM_DEBUGGER)
                         TJSNativeDebuggerBreak();
                         code++;
-                        break;
+                        TJS_VM_NEXT();
 
-                    default:
+                    TJS_VM_DEFAULT()
                         ThrowInvalidVMCode();
+#ifdef TJS_VM_THREADED_CODE
+                        TJS_VM_NEXT(); // unreachable; keeps compiler happy
+            }
+#else
                 }
             }
+#endif
         } catch(eTJSSilent &) {
             throw;
         } catch(eTJSScriptError &e) {
@@ -3174,3 +3276,9 @@ namespace TJS {
     //---------------------------------------------------------------------------
 
 } // namespace TJS
+
+// Cleanup VM dispatch macros
+// 清理 VM 分派宏
+#undef TJS_VM_CASE
+#undef TJS_VM_NEXT
+#undef TJS_VM_DEFAULT

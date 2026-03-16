@@ -69,7 +69,11 @@
 |--------|------|------|
 | P0 | 像素混合 SIMD 化 ([Highway](https://github.com/google/highway)) | ✅ 完成 |
 | P0 | 全 GPU 合成渲染管线 | 🔨 进行中 |
-| P0 | TJS2 VM 解释器优化 (computed goto) | 📋 计划中 |
+| P0 | TJS2 VM 解释器优化 (computed goto) | ✅ 完成 |
+
+## 近期小更新 / Recent Updates
+
+- **TJS2 VM 解释器 computed goto 优化**：在 GCC/Clang 平台上使用直接线程化分派（labels-as-values）替代传统 switch-case，消除中央分支瓶颈，每个操作码拥有独立的间接跳转，CPU 分支预测器可以学习逐操作码的跳转模式，预计提升 15-25% 脚本执行性能。MSVC 自动回退到原 switch-case 路径，零兼容性风险。
 ## 许可证
 
 本项目基于 GNU General Public License v3.0 (GPL-3.0) 开源，详见 [LICENSE](./LICENSE)。
