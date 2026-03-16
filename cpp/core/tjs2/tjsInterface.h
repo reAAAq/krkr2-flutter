@@ -7,6 +7,7 @@
 */
 //---------------------------------------------------------------------------
 // iTJSDispatch2 interface definition
+// iTJSDispatch2 接口定义 —— TJS2 对象系统核心接口，所有可分派对象均继承自此
 //---------------------------------------------------------------------------
 #ifndef tjsInterfaceH
 #define tjsInterfaceH
@@ -19,74 +20,73 @@ namespace TJS {
 
 /*[*/
 //---------------------------------------------------------------------------
-// call flag type
+// Member access / call flags  成员访问与调用标志位
 //---------------------------------------------------------------------------
-#define TJS_MEMBERENSURE 0x00000200 // create a member if not exists
+#define TJS_MEMBERENSURE 0x00000200  // create member if absent / 若成员不存在则创建
 #define TJS_MEMBERMUSTEXIST                                                    \
-    0x00000400 // member *must* exist ( for Dictionary/Array )
-#define TJS_IGNOREPROP 0x00000800 // ignore property invoking
-#define TJS_HIDDENMEMBER 0x00001000 // member is hidden
+    0x00000400  // member must exist (for Dictionary/Array) / 成员必须存在（用于字典/数组）
+#define TJS_IGNOREPROP 0x00000800    // bypass property handler / 绕过属性 handler 直接访问
+#define TJS_HIDDENMEMBER 0x00001000  // member is hidden / 隐藏成员（不在枚举中出现）
 #define TJS_STATICMEMBER                                                       \
-    0x00010000 // member is not registered to the
-               // object (internal use)
+    0x00010000  // not registered to object (internal use) / 不注册到对象（内部使用）
 
 #define TJS_ENUM_NO_VALUE                                                      \
-    0x00100000 // values are not retrieved
-               // (for EnumMembers)
+    0x00100000  // skip value retrieval in EnumMembers / EnumMembers 时不读取成员值
 
-#define TJS_NIS_REGISTER 0x00000001 // set native pointer
-#define TJS_NIS_GETINSTANCE 0x00000002 // get native pointer
+// NativeInstance storage flags  本地实例存储标志
+#define TJS_NIS_REGISTER    0x00000001  // set native pointer / 写入本地指针
+#define TJS_NIS_GETINSTANCE 0x00000002  // get native pointer / 读取本地指针
 
-#define TJS_CII_ADD 0x00000001 // register name
-// 'num' argument passed to CII is to be igonored.
-#define TJS_CII_GET 0x00000000 // retrieve name
+// ClassInstanceInfo (CII) operation codes  类实例信息操作码
+#define TJS_CII_ADD 0x00000001           // register member name / 注册成员名
+// 'num' argument is ignored for ADD.
+// ADD 操作时 num 参数被忽略。
+#define TJS_CII_GET 0x00000000           // retrieve member name / 查询成员名
 
-#define TJS_CII_SET_FINALIZE 0x00000002 // register "finalize" method name
-// (set empty string not to call the method)
-// 'num' argument passed to CII is to be igonored.
-#define TJS_CII_SET_MISSING 0x00000003 // register "missing" method name.
-// the method is called when the member is not present.
-// (set empty string not to call the method)
-// 'num' argument passed to CII is to be igonored.
-// the method is to be called with three arguments;
-// get_or_set    : false for get, true for set
-// name          : member name
-// value         : value property; you must
-//               : dereference using unary '*' operator.
-// the method must return true for found, false for not-found.
-#define TJS_CII_SET_SUPRECLASS 0x00000004 // register super class instance
-#define TJS_CII_GET_SUPRECLASS 0x00000005 // retrieve super class instance
+#define TJS_CII_SET_FINALIZE 0x00000002  // register "finalize" method / 注册 finalize 方法名
+// Pass empty string to suppress finalize call.
+// 传空字符串可禁止调用 finalize。
+#define TJS_CII_SET_MISSING 0x00000003   // register "missing" method / 注册 missing 方法名
+// Called when a member is not found; receives (get_or_set, name, *value).
+// 成员不存在时调用；接收参数：get_or_set（false=读,true=写）、name、*value。
+// Return true for found, false for not-found.
+// 返回 true 表示已处理，false 表示未找到。
+#define TJS_CII_SET_SUPRECLASS 0x00000004 // register super class instance / 注册超类实例
+#define TJS_CII_GET_SUPRECLASS 0x00000005 // retrieve super class instance / 获取超类实例
 
-#define TJS_OL_LOCK 0x00000001 // Lock the object
-#define TJS_OL_UNLOCK 0x00000002 // Unlock the object
+// Object lock/unlock flags  对象加锁/解锁标志
+#define TJS_OL_LOCK   0x00000001  // lock the object / 加锁
+#define TJS_OL_UNLOCK 0x00000002  // unlock the object / 解锁
 
     //---------------------------------------------------------------------------
-    // 	Operation  flag
+    // Operation flags — passed to iTJSDispatch2::Operation
+    // 运算标志 —— 传入 iTJSDispatch2::Operation
     //---------------------------------------------------------------------------
 
-#define TJS_OP_BAND 0x0001
-#define TJS_OP_BOR 0x0002
-#define TJS_OP_BXOR 0x0003
-#define TJS_OP_SUB 0x0004
-#define TJS_OP_ADD 0x0005
-#define TJS_OP_MOD 0x0006
-#define TJS_OP_DIV 0x0007
-#define TJS_OP_IDIV 0x0008
-#define TJS_OP_MUL 0x0009
-#define TJS_OP_LOR 0x000a
-#define TJS_OP_LAND 0x000b
-#define TJS_OP_SAR 0x000c
-#define TJS_OP_SAL 0x000d
-#define TJS_OP_SR 0x000e
-#define TJS_OP_INC 0x000f
-#define TJS_OP_DEC 0x0010
+#define TJS_OP_BAND 0x0001  // bitwise AND  (&=)  / 位与赋值
+#define TJS_OP_BOR  0x0002  // bitwise OR   (|=)  / 位或赋值
+#define TJS_OP_BXOR 0x0003  // bitwise XOR  (^=)  / 位异或赋值
+#define TJS_OP_SUB  0x0004  // subtract     (-=)  / 减法赋值
+#define TJS_OP_ADD  0x0005  // add          (+=)  / 加法赋值
+#define TJS_OP_MOD  0x0006  // modulo       (%=)  / 取模赋值
+#define TJS_OP_DIV  0x0007  // real divide  (/=)  / 实数除法赋值
+#define TJS_OP_IDIV 0x0008  // integer div  (\=)  / 整数除法赋值
+#define TJS_OP_MUL  0x0009  // multiply     (*=)  / 乘法赋值
+#define TJS_OP_LOR  0x000a  // logical OR   (||=) / 逻辑或赋值
+#define TJS_OP_LAND 0x000b  // logical AND  (&&=) / 逻辑与赋值
+#define TJS_OP_SAR  0x000c  // arith right shift (>>=) / 算术右移赋值
+#define TJS_OP_SAL  0x000d  // arith left  shift (<<=) / 算术左移赋值
+#define TJS_OP_SR   0x000e  // logical right shift (>>>=) / 逻辑右移赋值
+#define TJS_OP_INC  0x000f  // increment  (++) / 自增
+#define TJS_OP_DEC  0x0010  // decrement  (--) / 自减
 
-#define TJS_OP_MASK 0x001f
+#define TJS_OP_MASK 0x001f  // mask for operation bits / 运算标志掩码
 
-#define TJS_OP_MIN TJS_OP_BAND
-#define TJS_OP_MAX TJS_OP_DEC
+#define TJS_OP_MIN TJS_OP_BAND  // smallest op code / 最小运算码
+#define TJS_OP_MAX TJS_OP_DEC   // largest  op code / 最大运算码
 
-    /* SAR = Shift Arithmetic Right, SR = Shift (bitwise) Right */
+    /* SAR = Shift Arithmetic Right, SR = Shift (bitwise / unsigned) Right
+     * SAR = 算术右移（保留符号位），SR = 逻辑右移（补零） */
 
     //---------------------------------------------------------------------------
     // iTJSDispatch

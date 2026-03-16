@@ -17,13 +17,19 @@
 
 namespace TJS {
     /**
-     * TJS2 バイトコードを読み込んで、ScriptBlock を返す
+     * Loads a TJS2 bytecode file (.tjs compiled binary) and constructs a ScriptBlock.
+     * TJS2 バイトコードを読み込んで、ScriptBlock を返す。
+     * 读取 TJS2 字节码文件（.tjs 预编译二进制），构造并返回 ScriptBlock。
      *
+     * Binary format magic: "TJS2" (LE: 0x324a5354), version: "100\0" (LE: 0x00303031)
+     * 二进制格式魔数："TJS2"（小端：0x324a5354），版本："100\0"（小端：0x00303031）
      */
     class tTJSByteCodeLoader {
     public:
+        // File magic tag "TJS2" in little-endian / 文件魔数 "TJS2"（小端序）
         static const tjs_uint32 FILE_TAG_LE =
             ('T') | ('J' << 8) | ('S' << 16) | ('2' << 24);
+        // Version tag "100\0" in little-endian / 版本标签 "100\0"（小端序）
         static const tjs_uint32 VER_TAG_LE =
             ('1') | ('0' << 8) | ('0' << 16) | (0 << 24);
 

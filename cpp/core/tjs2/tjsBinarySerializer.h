@@ -19,11 +19,16 @@
 
 namespace TJS {
     /**
+     * Serializes TJS2 variant data to a binary stream.
      * バイナリ形式でデータをストリーム書き出しするためのクラス
-     * 形式は、MessagePack に近いもので細部TJS2用に調整している
-     * 文字列は、UTF-16のまま格納
-     * エンディアンはリトルエンディアンになっている
-     * ヘッダーも追加される
+     * 将 TJS2 变体数据序列化为二进制流。
+     *
+     * Format is MessagePack-like, adjusted for TJS2 specifics:
+     * フォーマットは MessagePack に近く、TJS2 用に細部を調整している。
+     * 格式类似 MessagePack，针对 TJS2 做了细部调整：
+     *   - Strings stored as UTF-16 / 字符串以 UTF-16 存储
+     *   - Little-endian byte order / 小端字节序
+     *   - File header included / 包含文件头
      */
     class tTJSBinarySerializer {
     public:

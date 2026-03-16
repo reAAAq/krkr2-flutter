@@ -50,7 +50,7 @@ The screenshot below shows the current running state on macOS with the Metal bac
 | Flutter Debug UI | ✅ Mostly Done | FPS control, engine lifecycle management, rendering status monitor |
 | Input Event Forwarding | ✅ Mostly Done | Mouse / touch event coordinate mapping and forwarding to the engine |
 | Engine Performance Optimization | 🔨 In Progress | SIMD pixel blending, GPU compositing pipeline, VM interpreter optimization, etc. |
-| Game Compatibility | 🔨 In Progress | Completing the script parser, adding plugins. Current goal: match compatibility with Z's closed-source build |
+| Game Compatibility | 🔨 In Progress | KAGParser / kagparserex / motionplayer plugins complete; ongoing: layerEx plugin series and script edge cases |
 | Original krkr2 Emulator Feature Porting | 📋 Planned | Gradually port original krkr2 emulator features to the new architecture |
 
 ## Platform Support
@@ -59,8 +59,8 @@ The screenshot below shows the current running state on macOS with the Metal bac
 |----------|--------|-----------------|----------------|
 | macOS | ✅ Mostly Done | Metal | IOSurface |
 | iOS | 🔨 Pipeline Working, Optimizing OpenGL Rendering | Metal | IOSurface |
-| Windows | 📋 Planned | Direct3D 11 | D3D11 Texture |
-| Linux | 📋 Planned | Vulkan / Desktop GL | DMA-BUF |
+| Windows | 🔨 Pipeline Working, Minor UI Features Pending | Direct3D 11 | D3D11 Texture |
+| Linux | 🔨 Pipeline Working, Input Dialog Pending | Vulkan / Desktop GL | DMA-BUF |
 | Android | 🔨 Pipeline Working, Optimizing | OpenGL ES / Vulkan | HardwareBuffer |
 
 ## Engine Performance Optimization
@@ -69,7 +69,14 @@ The screenshot below shows the current running state on macOS with the Metal bac
 |----------|------|--------|
 | P0 | Pixel Blend SIMD ([Highway](https://github.com/google/highway)) | ✅ Done |
 | P0 | Full GPU Compositing Pipeline | 🔨 In Progress |
-| P0 | TJS2 VM Interpreter (computed goto) | 📋 Planned |
+| P0 | TJS2 VM Interpreter (computed goto) | ✅ Done |
+
+## Recent Updates
+
+- **TJS2 VM computed goto optimization**: On GCC/Clang platforms, replaced the traditional switch-case dispatch with direct threaded dispatch (labels-as-values). Eliminates the central branch bottleneck — each opcode gets its own indirect jump, allowing the CPU branch predictor to learn per-opcode jump patterns. Expected 15-25% script execution speedup. MSVC automatically falls back to the original switch-case path with zero compatibility risk. Also fixed: out-of-bounds opcode safety guard, VM_NEW dispatch label, and `dispatch_table` element type (`void* const`).
+- **TJS2 core header bilingual comments**: Added Chinese/English dual-language comments to 21 header files, covering VM opcodes, iTJSDispatch2 interface flags, error codes, built-in classes (Array/Dictionary/Date/Math), lexer, bytecode loader, and more.
+- **Plugin system**: KAGParser, kagparserex, and motionplayer plugins are fully implemented. Fixed motionplayer crash in dir mode caused by `CanLoadPlugin` returning false for statically-linked plugins.
+- **Script compatibility**: Added `String.replace` support for plain string arguments, added `RegExp.cap` capture group property, fixing fatal crashes during game save operations.
 
 ## License
 

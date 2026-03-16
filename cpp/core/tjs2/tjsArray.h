@@ -7,6 +7,8 @@
 */
 //---------------------------------------------------------------------------
 // TJS Array class implementation
+// TJS2 Array 类实现 —— 对应脚本层 Array 内建类，底层使用 std::deque<tTJSVariant>
+// 注意：此 TJS 类不支持被继承 / Note: this TJS class cannot be inherited
 //---------------------------------------------------------------------------
 
 #ifndef tjsArrayH
@@ -16,18 +18,15 @@
 #include "tjs.h"
 #include "tjsNative.h"
 
-// note: this TJS class cannot be inherited
-
 namespace TJS {
     //---------------------------------------------------------------------------
-    // tTJSStringAppender
+    // tTJSStringAppender - fast string concatenation buffer for Array.join()
+    // tTJSStringAppender - 用于 Array.join() 的快速字符串拼接缓冲区
     //---------------------------------------------------------------------------
     class tTJSStringAppender {
-        // fast operation for string concat
-
-        tjs_char *Data;
-        tjs_int DataLen;
-        tjs_int DataCapacity; // in characters, not in bytes
+        tjs_char *Data;            // character buffer / 字符缓冲区
+        tjs_int DataLen;           // current length in characters / 当前长度（字符数）
+        tjs_int DataCapacity;      // capacity in characters, not in bytes / 容量（字符数，非字节数）
 
     public:
         tTJSStringAppender();

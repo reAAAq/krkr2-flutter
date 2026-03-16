@@ -7,6 +7,8 @@
 */
 //---------------------------------------------------------------------------
 // Dictionary class implementation
+// TJS2 Dictionary 类实现 —— 对应脚本层 Dictionary 内建类，
+// 键值存储基于 tTJSHashTable<ttstr, tTJSVariant>，支持成员枚举和深拷贝
 //---------------------------------------------------------------------------
 
 #ifndef tjsDictionaryH

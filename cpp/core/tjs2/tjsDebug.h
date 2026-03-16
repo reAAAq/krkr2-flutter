@@ -7,6 +7,7 @@
 */
 //---------------------------------------------------------------------------
 // TJS Debugging support
+// TJS2 调试支持 —— 栈追踪器（StackTracer）、断点触发与调试信息查询接口
 //---------------------------------------------------------------------------
 #ifndef tjsDebugH
 #define tjsDebugH
@@ -17,11 +18,13 @@
 namespace TJS {
 
 #ifdef _DEBUG
+    // Key identifying a unique scope (class + function + file + code offset)
+    // for the debug stack tracer. / 调试栈追踪器使用的作用域唯一标识键。
     struct ScopeKey {
-        int ClassIndex; //!< クラス名インデックス
-        int FuncIndex; //!< 関数名インデックス
-        int FileIndex; //!< ファイル名インデックス
-        int CodeOffset; //!< VM コードオフセット
+        int ClassIndex; //!< class name index / クラス名インデックス / 类名索引
+        int FuncIndex;  //!< function name index / 関数名インデックス / 函数名索引
+        int FileIndex;  //!< file name index / ファイル名インデックス / 文件名索引
+        int CodeOffset; //!< VM code offset / VM コードオフセット / VM 代码偏移量
 
         ScopeKey() :
             ClassIndex(-1), FuncIndex(-1), FileIndex(-1), CodeOffset(-1) {}

@@ -7,6 +7,7 @@
 */
 //---------------------------------------------------------------------------
 // Intermediate Code Context
+// 中间代码上下文 —— TJS2 字节码生成器、寄存器分配与 VM 操作码定义
 //---------------------------------------------------------------------------
 #ifndef tjsInterCodeGenH
 #define tjsInterCodeGenH
@@ -31,103 +32,119 @@ namespace TJS {
     int yylex(parser::value_type *yylex, tTJSScriptBlock *ptr);
     int _yyerror(const tjs_char *msg, tTJSScriptBlock *pm, tjs_int pos = -1);
 
+// VM code address <-> integer index conversion (code addr unit = sizeof(uint32))
+// VM 代码地址与整数索引互转（代码地址单位 = sizeof(uint32)）
 #define TJS_TO_VM_CODE_ADDR(x) ((x) * (tjs_int)sizeof(tjs_uint32))
-#define TJS_TO_VM_REG_ADDR(x) ((x) * (tjs_int)sizeof(tTJSVariant))
 #define TJS_FROM_VM_CODE_ADDR(x) ((tjs_int)(x) / (tjs_int)sizeof(tjs_uint32))
+// VM register address <-> integer index conversion (reg addr unit = sizeof(tTJSVariant))
+// VM 寄存器地址与整数索引互转（寄存器地址单位 = sizeof(tTJSVariant)）
+#define TJS_TO_VM_REG_ADDR(x) ((x) * (tjs_int)sizeof(tTJSVariant))
 #define TJS_FROM_VM_REG_ADDR(x) ((tjs_int)(x) / (tjs_int)sizeof(tTJSVariant))
+// Advance a code pointer by a byte offset stored as a VM code address
+// 将代码指针按 VM 代码地址（字节偏移）向前推进
 #define TJS_ADD_VM_CODE_ADDR(dest, x) ((*(char **)&(dest)) += (x))
+// Compute the address of register [x] relative to base pointer
+// 计算相对于 base 指针的第 [x] 个寄存器地址
 #define TJS_GET_VM_REG_ADDR(base, x)                                           \
     ((tTJSVariant *)((char *)(base) + (tjs_int)(x)))
+// Dereference register [x] relative to base pointer
+// 解引用 base 指针偏移 [x] 处的寄存器
 #define TJS_GET_VM_REG(base, x) (*(TJS_GET_VM_REG_ADDR(base, x)))
+// Expand one opcode into its four variants: base, PD (property-direct),
+// PI (property-indirect), P (property-generic)
+// 将一个操作码展开为四种形式：普通、PD（直接属性）、PI（间接属性）、P（通用属性）
 #define TJS_NORMAL_AND_PROPERTY_ACCESSER(x) x, x##PD, x##PI, x##P
 
+    // TJS2 VM opcode enum. Each entry maps 1:1 to a handler in ExecuteCode.
+    // TJS2 VM 操作码枚举。每项与 ExecuteCode 中的处理器一一对应。
     enum tTJSVMCodes {
 
-        VM_NOP,
-        VM_CONST,
-        VM_CP,
-        VM_CL,
-        VM_CCL,
-        VM_TT,
-        VM_TF,
-        VM_CEQ,
-        VM_CDEQ,
-        VM_CLT,
-        VM_CGT,
-        VM_SETF,
-        VM_SETNF,
-        VM_LNOT,
-        VM_NF,
-        VM_JF,
-        VM_JNF,
-        VM_JMP,
+        VM_NOP,     // no operation / 空操作
+        VM_CONST,   // load constant: ra[d] = da[s] / 加载常量
+        VM_CP,      // copy register: ra[d] = ra[s] / 复制寄存器
+        VM_CL,      // clear register: ra[d] = void / 清空寄存器
+        VM_CCL,     // clear N consecutive registers / 连续清空 N 个寄存器
+        VM_TT,      // test true: flag = (bool)ra[s] / 测试为真
+        VM_TF,      // test false: flag = !(bool)ra[s] / 测试为假
+        VM_CEQ,     // compare equal (loose): flag = (ra[a] == ra[b]) / 宽松相等比较
+        VM_CDEQ,    // compare discern-equal (strict ===): flag = (ra[a] === ra[b]) / 严格相等比较
+        VM_CLT,     // compare less-than: flag = (ra[a] < ra[b]) / 小于比较
+        VM_CGT,     // compare greater-than: flag = (ra[a] > ra[b]) / 大于比较
+        VM_SETF,    // set from flag: ra[d] = flag / 将 flag 写入寄存器
+        VM_SETNF,   // set from !flag: ra[d] = !flag / 将 !flag 写入寄存器
+        VM_LNOT,    // logical not: ra[d] = !ra[d] / 逻辑非
+        VM_NF,      // negate flag: flag = !flag / 翻转 flag
+        VM_JF,      // jump if flag / 条件跳转（flag 为真时跳转）
+        VM_JNF,     // jump if !flag / 条件跳转（flag 为假时跳转）
+        VM_JMP,     // unconditional jump / 无条件跳转
 
-        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_INC),
-        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_DEC),
-        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_LOR),
-        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_LAND),
-        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_BOR),
-        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_BXOR),
-        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_BAND),
-        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_SAR),
-        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_SAL),
-        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_SR),
-        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_ADD),
-        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_SUB),
-        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_MOD),
-        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_DIV),
-        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_IDIV),
-        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_MUL),
+        // Arithmetic/bitwise ops, each in 4 variants (base/PD/PI/P)
+        // 算术和位运算，每个有 4 种形式（普通/直接属性/间接属性/通用属性）
+        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_INC),  // increment / 自增
+        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_DEC),  // decrement / 自减
+        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_LOR),  // logical OR assign / 逻辑或赋值
+        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_LAND), // logical AND assign / 逻辑与赋值
+        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_BOR),  // bitwise OR assign / 位或赋值
+        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_BXOR), // bitwise XOR assign / 位异或赋值
+        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_BAND), // bitwise AND assign / 位与赋值
+        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_SAR),  // arithmetic right shift assign / 算术右移赋值
+        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_SAL),  // arithmetic left shift assign / 算术左移赋值
+        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_SR),   // unsigned right shift assign / 无符号右移赋值
+        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_ADD),  // add assign / 加法赋值
+        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_SUB),  // subtract assign / 减法赋值
+        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_MOD),  // modulo assign / 取模赋值
+        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_DIV),  // real divide assign / 实数除法赋值
+        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_IDIV), // integer divide assign / 整数除法赋值
+        TJS_NORMAL_AND_PROPERTY_ACCESSER(VM_MUL),  // multiply assign / 乘法赋值
 
-        VM_BNOT,
-        VM_TYPEOF,
-        VM_TYPEOFD,
-        VM_TYPEOFI,
-        VM_EVAL,
-        VM_EEXP,
-        VM_CHKINS,
-        VM_ASC,
-        VM_CHR,
-        VM_NUM,
-        VM_CHS,
-        VM_INV,
-        VM_CHKINV,
-        VM_INT,
-        VM_REAL,
-        VM_STR,
-        VM_OCTET,
-        VM_CALL,
-        VM_CALLD,
-        VM_CALLI,
-        VM_NEW,
-        VM_GPD,
-        VM_SPD,
-        VM_SPDE,
-        VM_SPDEH,
-        VM_GPI,
-        VM_SPI,
-        VM_SPIE,
-        VM_GPDS,
-        VM_SPDS,
-        VM_GPIS,
-        VM_SPIS,
-        VM_SETP,
-        VM_GETP,
-        VM_DELD,
-        VM_DELI,
-        VM_SRV,
-        VM_RET,
-        VM_ENTRY,
-        VM_EXTRY,
-        VM_THROW,
-        VM_CHGTHIS,
-        VM_GLOBAL,
-        VM_ADDCI,
-        VM_REGMEMBER,
-        VM_DEBUGGER,
+        VM_BNOT,      // bitwise NOT / 按位取反
+        VM_TYPEOF,    // typeof operator / typeof 运算符
+        VM_TYPEOFD,   // typeof direct member / typeof 直接成员
+        VM_TYPEOFI,   // typeof indirect member / typeof 间接成员
+        VM_EVAL,      // evaluate expression string / 求值表达式字符串
+        VM_EEXP,      // evaluate expression (non-global context) / 非全局上下文求值
+        VM_CHKINS,    // instanceof check / instanceof 检查
+        VM_ASC,       // get character code / 获取字符码
+        VM_CHR,       // create char from code / 由字符码创建字符
+        VM_NUM,       // convert to number / 转换为数值
+        VM_CHS,       // change sign (negate) / 取反（符号变换）
+        VM_INV,       // invalidate object / 使对象失效
+        VM_CHKINV,    // check object validity / 检查对象是否有效
+        VM_INT,       // convert to integer / 转换为整数
+        VM_REAL,      // convert to real / 转换为实数
+        VM_STR,       // convert to string / 转换为字符串
+        VM_OCTET,     // convert to octet (byte array) / 转换为字节数组
+        VM_CALL,      // call function / 调用函数
+        VM_CALLD,     // call direct member function / 调用直接成员函数
+        VM_CALLI,     // call indirect member function / 调用间接成员函数
+        VM_NEW,       // construct object / 构造对象
+        VM_GPD,       // get property direct / 直接获取属性
+        VM_SPD,       // set property direct / 直接设置属性
+        VM_SPDE,      // set property direct (ensure member) / 直接设置属性（确保成员存在）
+        VM_SPDEH,     // set property direct (ensure + hidden) / 直接设置属性（确保+隐藏）
+        VM_GPI,       // get property indirect / 间接获取属性
+        VM_SPI,       // set property indirect / 间接设置属性
+        VM_SPIE,      // set property indirect (ensure) / 间接设置属性（确保成员）
+        VM_GPDS,      // get property direct (ignore prop handler) / 直接获取属性（忽略 handler）
+        VM_SPDS,      // set property direct (ensure+ignore prop) / 直接设置属性（确保+忽略 handler）
+        VM_GPIS,      // get property indirect (ignore prop handler) / 间接获取属性（忽略 handler）
+        VM_SPIS,      // set property indirect (ensure+ignore prop) / 间接设置属性（确保+忽略 handler）
+        VM_SETP,      // set property (generic) / 通用设置属性
+        VM_GETP,      // get property (generic) / 通用获取属性
+        VM_DELD,      // delete direct member / 删除直接成员
+        VM_DELI,      // delete indirect member / 删除间接成员
+        VM_SRV,       // set return value / 设置返回值
+        VM_RET,       // return from function / 从函数返回
+        VM_ENTRY,     // enter try block / 进入 try 块
+        VM_EXTRY,     // exit try block / 退出 try 块
+        VM_THROW,     // throw exception / 抛出异常
+        VM_CHGTHIS,   // change closure 'this' / 修改闭包的 this 对象
+        VM_GLOBAL,    // push global object / 压入全局对象
+        VM_ADDCI,     // add class instance info / 添加类实例信息
+        VM_REGMEMBER, // register object member / 注册对象成员
+        VM_DEBUGGER,  // debugger breakpoint / 调试器断点
 
-        __VM_LAST /* = last mark ; this is not a real operation code
-                   */
+        __VM_LAST // sentinel, not a real opcode / 哨兵值，不是真实操作码
     };
 
 #undef TJS_NORMAL_AND_PROPERTY_ACCESSER

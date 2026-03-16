@@ -7,6 +7,8 @@
 */
 //---------------------------------------------------------------------------
 // TJS2's C++ exception class and exception message
+// TJS2 C++ 异常类与异常消息定义
+// 异常层次：eTJS → eTJSError / eTJSScriptError / eTJSScriptException / eTJSSilent
 //---------------------------------------------------------------------------
 #pragma once
 

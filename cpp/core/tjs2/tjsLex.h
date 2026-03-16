@@ -7,6 +7,7 @@
 */
 //---------------------------------------------------------------------------
 // TJS2 lexical analyzer
+// TJS2 词法分析器 —— 将源码字符流分解为 token 序列，供 Bison 语法分析器消费
 //---------------------------------------------------------------------------
 #ifndef tjsLexH
 #define tjsLexH
@@ -16,12 +17,12 @@
 #include <vector>
 #include <deque>
 
+// When true, enables a quick-hack to work around parser stack overflow
+// caused by deeply-nested %[...] dictionary / [...] array literals,
+// by wrapping them in an immediately-invoked function expression.
+// 启用时，将 %[ ... ] 和 [ ... ] 字面量包裹为立即执行函数以绕过解析器栈溢出问题，
+// 可能带来轻微副作用。
 extern bool tjsEnableDicFuncQuickHack;
-// Defining this enables quick-hack, avoiding the dictionary/array
-// parser memory overflow. This is done with replacing %[ ... ] to
-// function { return %[ ... ]; }() and replacing [ ... ] to function {
-// return [ ... ]; }(). These replacing is applied for expression
-// which starts with "%[" or "[", may cause some sideeffects....
 
 namespace TJS {
     //---------------------------------------------------------------------------
