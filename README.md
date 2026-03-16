@@ -50,7 +50,7 @@
 | Flutter 调试 UI | ✅ 基本完成 | FPS 控制、引擎生命周期管理、渲染状态监控 |
 | 输入事件转发 | ✅ 基本完成 | 鼠标 / 触控事件坐标映射转发到引擎 |
 | 引擎性能优化 | 🔨 进行中 | SIMD 像素混合、GPU 合成管线、VM 解释器优化等 |
-| 游戏兼容性优化 | 🔨 进行中 | 补全解析引擎、添加插件，阶段目标与 Z 大闭源版兼容性持平 |
+| 游戏兼容性优化 | 🔨 进行中 | KAGParser / kagparserex / motionplayer 插件已完成；持续补全 layerEx 系插件与脚本边界情况 |
 | 原有 krkr2 模拟器功能移植 | 📋 规划中 | 将原有 krkr2 模拟器功能逐步移植到新架构 |
 
 ## 平台支持状态
@@ -59,8 +59,8 @@
 |------|------|----------|-------------|
 | macOS | ✅ 基本完成 | Metal | IOSurface |
 | iOS | 🔨 流程打通，正在优化和修复 OpenGL 渲染 | Metal | IOSurface |
-| Windows | 📋 计划中 | Direct3D 11 | D3D11 Texture |
-| Linux | 📋 计划中 | Vulkan / Desktop GL | DMA-BUF |
+| Windows | 🔨 基本流程打通，部分 UI 功能待完善 | Direct3D 11 | D3D11 Texture |
+| Linux | 🔨 基本流程打通，输入对话框等待实现 | Vulkan / Desktop GL | DMA-BUF |
 | Android | 🔨 流程跑通，优化中 | OpenGL ES / Vulkan | HardwareBuffer |
 
 ## 引擎性能优化
@@ -73,7 +73,11 @@
 
 ## 近期小更新 / Recent Updates
 
-- **TJS2 VM 解释器 computed goto 优化**：在 GCC/Clang 平台上使用直接线程化分派（labels-as-values）替代传统 switch-case，消除中央分支瓶颈，每个操作码拥有独立的间接跳转，CPU 分支预测器可以学习逐操作码的跳转模式，预计提升 15-25% 脚本执行性能。MSVC 自动回退到原 switch-case 路径，零兼容性风险。
+- **TJS2 VM 解释器 computed goto 优化**：在 GCC/Clang 平台上使用直接线程化分派（labels-as-values）替代传统 switch-case，消除中央分支瓶颈，每个操作码拥有独立的间接跳转，CPU 分支预测器可以学习逐操作码的跳转模式，预计提升 15-25% 脚本执行性能。MSVC 自动回退到原 switch-case 路径，零兼容性风险。同步修复：越界操作码安全保护、VM_NEW 分派标签、dispatch_table 元素类型（`void* const`）。
+- **TJS2 核心头文件双语注释**：为 21 个头文件补充中英双语注释，覆盖 VM 操作码枚举、iTJSDispatch2 接口、错误码、内建类（Array/Dictionary/Date/Math）、词法分析器、字节码加载器等。
+- **插件系统**：KAGParser、kagparserex、motionplayer 插件核心实现完成；修复 motionplayer 在 dir 模式下 CanLoadPlugin 返回 false 导致的崩溃。
+- **脚本兼容性**：补全 `String.replace` 对纯字符串参数的支持，添加 `RegExp.cap` 捕获组属性，修复游戏存档时的致命崩溃。
+
 ## 许可证
 
 本项目基于 GNU General Public License v3.0 (GPL-3.0) 开源，详见 [LICENSE](./LICENSE)。
