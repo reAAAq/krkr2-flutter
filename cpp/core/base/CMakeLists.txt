@@ -45,12 +45,13 @@ find_package(LibXml2 REQUIRED)
 find_package(SDL2 CONFIG REQUIRED)
 find_package(zstd CONFIG REQUIRED)
 find_package(unofficial-minizip CONFIG REQUIRED)
+find_library(LIBB2_LIBRARY NAMES b2 libb2 PATHS "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib" NO_DEFAULT_PATH REQUIRED)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
     uchardet::libuchardet
     unrar::unrar
     LibArchive::LibArchive
-    ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib/libb2.a
+    ${LIBB2_LIBRARY}
     LibXml2::LibXml2
     zstd::libzstd
 
