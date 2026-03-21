@@ -101,6 +101,7 @@
     "highway",
     "uchardet",
     "unrar",
+    "libb2",
     {
       "name": "vcpkg-cmake",
       "host": true

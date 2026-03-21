@@ -74,7 +74,7 @@ list(FILTER CUBISM_FW_SOURCES EXCLUDE REGEX ".*/D3D9/.*|.*/D3D11/.*|.*/Vulkan/.*
 
 add_library(CubismFramework STATIC ${CUBISM_FW_SOURCES})
 target_include_directories(CubismFramework PUBLIC
-    ${CUBISM_FW_DIR}
+    ${CUBISM_FW_DIR}/src
     ${CUBISM_CORE_DIR}/include
 )
 target_compile_definitions(CubismFramework PUBLIC CSM_TARGET_ANGLE_ES2)
@@ -116,7 +116,7 @@ endif()
 target_link_libraries(CubismFramework PUBLIC ${CUBISM_CORE_LIB})
 
 target_include_directories(${PROJECT_NAME} PUBLIC
-    ${CUBISM_FW_DIR}
+    ${CUBISM_FW_DIR}/src
     ${CUBISM_CORE_DIR}/include
 )
 target_compile_definitions(${PROJECT_NAME} PUBLIC CSM_TARGET_ANGLE_ES2)
