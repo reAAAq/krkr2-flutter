@@ -37,7 +37,7 @@ extern "C" {
 #include "FontImpl.h"
 
 tTVPApplication *Application = new tTVPApplication;
-std::thread::id TVPMainThreadID;
+std::thread::id TVPMainThreadID = std::this_thread::get_id();
 static tTJSCriticalSection _NoMemCallBackCS;
 static void *_reservedMem = malloc(1024 * 1024 * 4); // 4M reserved mem
 static bool _project_startup = false;

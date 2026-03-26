@@ -184,6 +184,12 @@ abstract class AppLocalizations {
   /// **'4. Come back and tap \"Refresh\" to detect new games'**
   String get importStep4;
 
+  /// No description provided for @macosImportTip.
+  ///
+  /// In en, this message translates to:
+  /// **'Note: Please select the folder containing the XP3 file first before select the target XP3 file due to macOS sandbox restrictions'**
+  String get macosImportTip;
+
   /// No description provided for @gamesDirectory.
   ///
   /// In en, this message translates to:

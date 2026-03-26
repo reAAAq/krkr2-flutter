@@ -305,7 +305,7 @@ void tTJSNI_VideoOverlay::Play() {
         VideoOverlay->Play();
         ClearWndProcMessages();
         if(Mode != vomMFEVR)
-            SetStatus(ssPlay);
+            SetStatusAsync(ssPlay); // prevent onStatusChanged re-entering and freeing this
     }
 }
 //---------------------------------------------------------------------------
@@ -315,7 +315,7 @@ void tTJSNI_VideoOverlay::Stop() {
         VideoOverlay->Stop();
         ClearWndProcMessages();
         if(Mode != vomMFEVR)
-            SetStatus(ssStop);
+            SetStatusAsync(ssStop); // prevent onStatusChanged re-entering and freeing this
     }
 }
 //---------------------------------------------------------------------------
@@ -325,7 +325,7 @@ void tTJSNI_VideoOverlay::Pause() {
         VideoOverlay->Pause();
         //		ClearWndProcMessages();
         if(Mode != vomMFEVR)
-            SetStatus(ssPause);
+            SetStatusAsync(ssPause); // async: prevent onStatusChanged re-entering and freeing this
     }
 }
 void tTJSNI_VideoOverlay::Rewind() {

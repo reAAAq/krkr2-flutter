@@ -55,6 +55,10 @@ class AppLocalizationsEn extends AppLocalizations {
       '4. Come back and tap \"Refresh\" to detect new games';
 
   @override
+  String get macosImportTip =>
+      'Note: Please select the folder containing the XP3 file first before select the target XP3 file due to macOS sandbox restrictions';
+
+  @override
   String get gamesDirectory => 'Games directory: Games/';
 
   @override

@@ -16,6 +16,7 @@
   "importStep2": "2. Go to: On My iPhone > Krkr2 > Games",
   "importStep3": "3. Copy your game folder into the Games directory",
   "importStep4": "4. Come back and tap \"Refresh\" to detect new games",
+  "macosImportTip": "Note: Please select the folder containing the XP3 file first before select the target XP3 file due to macOS sandbox restrictions",
   "gamesDirectory": "Games directory: Games/",
   "gotIt": "Got it",
 

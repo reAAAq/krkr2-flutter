@@ -16,6 +16,7 @@
   "importStep2": "2. 前往：我的 iPhone > Krkr2 > Games",
   "importStep3": "3. 将游戏文件夹复制到 Games 目录",
   "importStep4": "4. 返回本应用，点击「刷新」检测新游戏",
+  "macosImportTip": "注意：由于 macOS 沙盒限制，请先选择 XP3 文件所在的文件夹后再选择目标 XP3 文件",
   "gamesDirectory": "游戏目录：Games/",
   "gotIt": "知道了",
 

@@ -16,6 +16,7 @@
   "importStep2": "2. iPhone内 > Krkr2 > Games に移動",
   "importStep3": "3. ゲームフォルダをGamesディレクトリにコピー",
   "importStep4": "4. アプリに戻り「更新」をタップして新しいゲームを検出",
+  "macosImportTip": "注意：macOS サンドボックス制限のため、まず XP3 ファイルを含むフォルダを選択し、その後対象の XP3 ファイルを選択してください",
   "gamesDirectory": "ゲームディレクトリ：Games/",
   "gotIt": "了解",
 

@@ -47,7 +47,7 @@ bool TVPEngineBootstrap::Initialize(uint32_t width, uint32_t height,
 
     // 1. SDL setup (required for audio / misc subsystems)
     SDL_SetMainReady();
-    TVPMainThreadID = std::this_thread::get_id();
+    // TVPMainThreadID is captured at dylib load time (static init in Application.cpp) not the main() entry point, so it may be incorrect if the dylib is loaded on a different thread.
     spdlog::debug("EngineBootstrap: starting initialization");
     spdlog::default_logger()->flush();
 

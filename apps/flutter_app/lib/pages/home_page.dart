@@ -284,6 +284,63 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
+    if (Platform.isMacOS) {
+      // Using getDirectoryPath() causes macOS to grant powerbox-level access to the entire folder,
+      // which persists across app launches and allows the engine to open all files within the directory.
+      await _showMacosImportGuide();
+      
+      final selectedDir = await FilePicker.platform.getDirectoryPath(
+        dialogTitle: l10n.selectGameArchive,
+      );
+      if (selectedDir == null || !mounted) return;
+
+      final xp3Files = Directory(selectedDir)
+          .listSync()
+          .whereType<File>()
+          .where((f) => f.path.toLowerCase().endsWith('.xp3'))
+          .toList()
+        ..sort((a, b) => a.path.compareTo(b.path));
+
+      if (xp3Files.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.selectGameArchive),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+
+      // Pick the main XP3 file.
+      final File? selectedFile;
+      if (xp3Files.length == 1) {
+        selectedFile = xp3Files.first;
+      } else {
+        selectedFile = await showDialog<File>(
+          context: context,
+          builder: (ctx) => _Xp3PickerDialog(xp3Files: xp3Files),
+        );
+        if (selectedFile == null || !mounted) return;
+      }
+
+      final game = GameInfo(path: selectedFile.path);
+      final added = await _gameManager.addGame(game);
+      if (mounted) {
+        if (added) {
+          setState(() {});
+          _offerScrapeAfterAdd(selectedFile.path);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(l10n.gameAlreadyExists(p.basename(selectedFile.path))),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+      return;
+    }
+
     final result = await FilePicker.platform.pickFiles(
       dialogTitle: l10n.selectGameArchive,
       type: FileType.custom,
@@ -386,6 +443,26 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
           ],
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(l10n.gotIt),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showMacosImportGuide() async {
+    final l10n = AppLocalizations.of(context)!;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.importGames),
+        content: Text(
+          l10n.macosImportTip,
+          style: const TextStyle(fontSize: 14),
         ),
         actions: [
           FilledButton(
@@ -1152,5 +1229,72 @@ class _CoverCard extends StatelessWidget {
     if (diff.inDays < 1) return l10n.hoursAgo(diff.inHours);
     if (diff.inDays < 7) return l10n.daysAgo(diff.inDays);
     return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  }
+}
+
+/// Dialog shown on macOS when a folder contains multiple XP3 files.
+/// The user selects which one to add as a game entry.
+class _Xp3PickerDialog extends StatefulWidget {
+  const _Xp3PickerDialog({required this.xp3Files});
+
+  final List<File> xp3Files;
+
+  @override
+  State<_Xp3PickerDialog> createState() => _Xp3PickerDialogState();
+}
+
+class _Xp3PickerDialogState extends State<_Xp3PickerDialog> {
+  int? _selectedIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    // Pre-select the first file as a sensible default.
+    _selectedIndex = 0;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return AlertDialog(
+      title: Text(l10n.selectGameArchive),
+      content: SizedBox(
+        width: 400,
+        child: ListView.builder(
+          shrinkWrap: true,
+          itemCount: widget.xp3Files.length,
+          itemBuilder: (ctx, i) {
+            final name = p.basename(widget.xp3Files[i].path);
+            return RadioListTile<int>(
+              value: i,
+              groupValue: _selectedIndex,
+              title: Text(name, style: const TextStyle(fontFamily: 'monospace')),
+              onChanged: (value) {
+                setState(() {
+                  _selectedIndex = value;
+                });
+              },
+            );
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(l10n.cancel),
+        ),
+        FilledButton(
+          onPressed: _selectedIndex == null
+              ? null
+              : () {
+                  Navigator.pop(
+                    context,
+                    widget.xp3Files[_selectedIndex!],
+                  );
+                },
+          child: Text(l10n.addGame),
+        ),
+      ],
+    );
   }
 }

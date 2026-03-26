@@ -53,6 +53,10 @@ class AppLocalizationsJa extends AppLocalizations {
   String get importStep4 => '4. アプリに戻り「更新」をタップして新しいゲームを検出';
 
   @override
+  String get macosImportTip =>
+      '注意：macOS サンドボックス制限のため、まず XP3 ファイルを含むフォルダを選択し、その後対象の XP3 ファイルを選択してください';
+
+  @override
   String get gamesDirectory => 'ゲームディレクトリ：Games/';
 
   @override

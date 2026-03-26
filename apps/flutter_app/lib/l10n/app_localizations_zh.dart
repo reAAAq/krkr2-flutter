@@ -52,6 +52,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get importStep4 => '4. 返回本应用，点击「刷新」检测新游戏';
 
   @override
+  String get macosImportTip =>
+      '注意：由于 macOS 沙盒限制，请先选择 XP3 文件所在的文件夹后再选择目标 XP3 文件';
+
+  @override
   String get gamesDirectory => '游戏目录：Games/';
 
   @override
