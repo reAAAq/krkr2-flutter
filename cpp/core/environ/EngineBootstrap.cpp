@@ -79,6 +79,7 @@ void TVPEngineBootstrap::Shutdown() {
 
     spdlog::info("EngineBootstrap: shutting down");
     krkr::GetEngineEGLContext().Destroy();
+    spdlog::shutdown();
     s_initialized = false;
 }
 

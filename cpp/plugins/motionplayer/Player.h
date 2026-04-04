@@ -46,7 +46,7 @@ namespace motion {
 
     public:
         Player() = default;
-        ~Player() { cleanupTempLayer(); }
+        ~Player() { cleanupTempLayer(true); }
 
         Player(const Player &) = delete;
         Player &operator=(const Player &) = delete;
@@ -439,11 +439,13 @@ namespace motion {
             }
         }
 
-        void cleanupTempLayer() {
+        void cleanupTempLayer(bool in_destructor = false) {
             if(_tempLayer) {
-                try {
-                    _tempLayer->FuncCall(0, TJS_W("invalidate"), nullptr, nullptr, 0, nullptr, _tempLayer);
-                } catch(...) {}
+                if(!in_destructor) {
+                    try {
+                        _tempLayer->FuncCall(0, TJS_W("invalidate"), nullptr, nullptr, 0, nullptr, _tempLayer);
+                    } catch(...) {}
+                }
                 _tempLayer->Release();
                 _tempLayer = nullptr;
             }
